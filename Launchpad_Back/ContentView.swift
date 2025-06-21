@@ -79,7 +79,7 @@ struct LaunchpadView: View {
                         }
                     )
                     .gesture(
-                        DragGesture(minimumDistance: 10)
+                        DragGesture(minimumDistance: 5)
                             .onChanged { dragAmount = $0.translation }
                             .onEnded(handleDragEnd)
                     )
@@ -104,7 +104,7 @@ struct LaunchpadView: View {
     
     // MARK: - Helper Methods
     private func handleScroll(deltaX: CGFloat) {
-        guard abs(deltaX) > 2 else { return }
+        guard abs(deltaX) > 0.5 else { return }
         
         withAnimation(.easeOut(duration: 0.25)) {
             if deltaX > 0 && currentPage > 0 {
@@ -116,7 +116,7 @@ struct LaunchpadView: View {
     }
     
     private func handleDragEnd(_ value: DragGesture.Value) {
-        let threshold: CGFloat = 50
+        let threshold: CGFloat = 30
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             if value.translation.width > threshold && currentPage > 0 {
@@ -140,7 +140,7 @@ struct LaunchpadView: View {
             let deltaX = event.scrollingDeltaX
             
             if event.phase == .began && !scrollGestureInProgress {
-                if abs(deltaX) > abs(event.scrollingDeltaY) && abs(deltaX) > 0.5 {
+                if abs(deltaX) > abs(event.scrollingDeltaY) && abs(deltaX) > 0.2 {
                     DispatchQueue.main.async {
                         scrollGestureInProgress = true
                         handleScroll(deltaX: deltaX)
@@ -328,7 +328,6 @@ struct LaunchpadBackground: NSViewRepresentable {
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
-        visualEffectView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.001).cgColor
         return visualEffectView
     }
     
