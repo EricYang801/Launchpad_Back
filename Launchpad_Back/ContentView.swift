@@ -329,7 +329,7 @@ struct SearchBar: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
             
-            TextField("搜尋", text: $text)
+            TextField("Search", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
             
