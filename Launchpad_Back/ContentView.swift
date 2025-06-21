@@ -164,17 +164,29 @@ struct AppIcon: View {
         VStack(spacing: 8) {
             // 圖示
             Group {
-                if let icon = app.appIcon {
+                if let icon = app.appIcon, icon.size.width > 0 {
                     Image(nsImage: icon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                 } else {
+                    // 預設圖示 - 使用更好看的設計
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(.secondary)
+                        .fill(LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.blue.opacity(0.3),
+                                Color.purple.opacity(0.3)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
                         .overlay(
-                            Image(systemName: "app")
-                                .font(.title)
-                                .foregroundStyle(.primary)
+                            Image(systemName: "app.dashed")
+                                .font(.title2)
+                                .foregroundStyle(.primary.opacity(0.7))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(.primary.opacity(0.1), lineWidth: 1)
                         )
                 }
             }
@@ -264,7 +276,7 @@ struct PageIndicator: View {
 struct LaunchpadBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = .fullScreenUI
+        visualEffectView.material = .hudWindow
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
@@ -275,4 +287,8 @@ struct LaunchpadBackground: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         // 保持背景狀態
     }
+}
+
+#Preview {
+    ContentView()
 }
