@@ -19,9 +19,3 @@ struct Launchpad_BackApp: App {
         .defaultSize(width: 1200, height: 900)
     }
 }
-
-#Preview {
-    ContentView()
-        .preferredColorScheme(.dark)
-        .frame(width: 1200, height: 900)
-}

@@ -21,9 +21,8 @@ struct LaunchpadView: View {
     @State private var currentPage = 0
     @State private var dragAmount = CGSize.zero
     @State private var searchText = ""
-    @State private var scrollMonitor: Any? // 用於存儲事件監聽器
+    @State private var scrollMonitor: Any?
     @State private var scrollGestureInProgress = false
-    @State private var gestureResetTimer: Timer?
     
     // 配置
     private let appsPerPage = 35
@@ -32,14 +31,12 @@ struct LaunchpadView: View {
     // 計算屬性
     private var filteredApps: [AppItem] {
         let uniqueApps = Dictionary(grouping: viewModel.apps, by: \.bundleID)
-            .compactMapValues { $0.first }
+            .compactMapValues(\.first)
             .values
             .sorted { $0.name < $1.name }
         
-        if searchText.isEmpty {
-            return Array(uniqueApps)
-        }
-        return uniqueApps.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return searchText.isEmpty ? Array(uniqueApps) 
+            : uniqueApps.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
     
     private var totalPages: Int {
@@ -49,15 +46,12 @@ struct LaunchpadView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Launchpad 風格的半透明背景
                 LaunchpadBackground()
                     .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // 頂部間距
                     Spacer().frame(height: 20)
                     
-                    // 搜尋欄
                     SearchBar(text: $searchText)
                         .padding(.horizontal, 80)
                         .onChange(of: searchText) { _, _ in
@@ -65,9 +59,7 @@ struct LaunchpadView: View {
                             dragAmount = .zero
                         }
                     
-                    // 主要內容區域
                     ZStack {
-                        // 分頁內容
                         ForEach(0..<totalPages, id: \.self) { pageIndex in
                             PageView(
                                 apps: appsForPage(pageIndex),
@@ -80,53 +72,21 @@ struct LaunchpadView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle()) // 確保整個區域可以接收手勢
+                    .contentShape(Rectangle())
                     .background(
-                        // 添加觸控板雙指滾動支援
                         TouchpadScrollView { deltaX in
-                            print("收到滾動事件: \(deltaX)")
-                            if abs(deltaX) > 2 {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    if deltaX > 0 && currentPage > 0 {
-                                        print("切換到上一頁: \(currentPage - 1)")
-                                        currentPage -= 1
-                                    } else if deltaX < 0 && currentPage < totalPages - 1 {
-                                        print("切換到下一頁: \(currentPage + 1)")
-                                        currentPage += 1
-                                    }
-                                }
-                            }
+                            handleScroll(deltaX: deltaX)
                         }
                     )
                     .gesture(
-                        // 保留拖拽手勢作為備用
                         DragGesture(minimumDistance: 10)
-                            .onChanged { value in
-                                dragAmount = value.translation
-                            }
-                            .onEnded { value in
-                                let threshold: CGFloat = 50
-                                
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                    if value.translation.width > threshold && currentPage > 0 {
-                                        currentPage -= 1
-                                    } else if value.translation.width < -threshold && currentPage < totalPages - 1 {
-                                        currentPage += 1
-                                    }
-                                    dragAmount = .zero
-                                }
-                            }
+                            .onChanged { dragAmount = $0.translation }
+                            .onEnded(handleDragEnd)
                     )
                     
-                    // 頁面指示器
                     if totalPages > 1 && searchText.isEmpty {
-                        PageIndicator(currentPage: currentPage, totalPages: totalPages) { page in
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                                currentPage = page
-                                dragAmount = .zero
-                            }
-                        }
-                        .padding(.bottom, 60)
+                        PageIndicator(currentPage: currentPage, totalPages: totalPages, onPageTap: switchToPage)
+                            .padding(.bottom, 60)
                     } else {
                         Spacer().frame(height: 60)
                     }
@@ -142,43 +102,55 @@ struct LaunchpadView: View {
         }
     }
     
-    // 設置全域滾輪事件監聽
+    // MARK: - Helper Methods
+    private func handleScroll(deltaX: CGFloat) {
+        guard abs(deltaX) > 2 else { return }
+        
+        withAnimation(.easeOut(duration: 0.25)) {
+            if deltaX > 0 && currentPage > 0 {
+                currentPage -= 1
+            } else if deltaX < 0 && currentPage < totalPages - 1 {
+                currentPage += 1
+            }
+        }
+    }
+    
+    private func handleDragEnd(_ value: DragGesture.Value) {
+        let threshold: CGFloat = 50
+        
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            if value.translation.width > threshold && currentPage > 0 {
+                currentPage -= 1
+            } else if value.translation.width < -threshold && currentPage < totalPages - 1 {
+                currentPage += 1
+            }
+            dragAmount = .zero
+        }
+    }
+    
+    private func switchToPage(_ page: Int) {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            currentPage = page
+            dragAmount = .zero
+        }
+    }
+    
     private func setupScrollMonitor() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             let deltaX = event.scrollingDeltaX
             
-            // 調試輸出（可以移除）
-            print("滾輪事件 - phase: \(event.phase.rawValue), momentumPhase: \(event.momentumPhase.rawValue), deltaX: \(deltaX)")
-            
-            // 只處理手勢的真正開始，且不在滾動進行中
             if event.phase == .began && !scrollGestureInProgress {
-                // 只處理明顯的水平滾動
                 if abs(deltaX) > abs(event.scrollingDeltaY) && abs(deltaX) > 0.5 {
                     DispatchQueue.main.async {
-                        print("觸發頁面切換 - deltaX: \(deltaX)")
-                        
-                        // 立即標記手勢開始
                         scrollGestureInProgress = true
-                        
-                        // 執行頁面切換
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            if deltaX > 0 && currentPage > 0 {
-                                currentPage -= 1
-                                print("切換到上一頁: \(currentPage)")
-                            } else if deltaX < 0 && currentPage < totalPages - 1 {
-                                currentPage += 1
-                                print("切換到下一頁: \(currentPage)")
-                            }
-                        }
+                        handleScroll(deltaX: deltaX)
                     }
                 }
             }
             
-            // 當慣性滾動完全結束時，重置狀態
             if event.momentumPhase == .ended {
                 DispatchQueue.main.async {
                     scrollGestureInProgress = false
-                    print("慣性滾動結束，重置狀態")
                 }
             }
             
@@ -186,14 +158,11 @@ struct LaunchpadView: View {
         }
     }
     
-    // 移除事件監聽器
     private func removeScrollMonitor() {
         if let monitor = scrollMonitor {
             NSEvent.removeMonitor(monitor)
             scrollMonitor = nil
         }
-        gestureResetTimer?.invalidate()
-        gestureResetTimer = nil
     }
     
     private func appsForPage(_ page: Int) -> [AppItem] {
@@ -248,25 +217,7 @@ struct AppIcon: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                 } else {
-                    // 預設圖示 - 使用更好看的設計
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.blue.opacity(0.3),
-                                Color.purple.opacity(0.3)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-                        .overlay(
-                            Image(systemName: "app.dashed")
-                                .font(.title2)
-                                .foregroundStyle(.primary.opacity(0.7))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(.primary.opacity(0.1), lineWidth: 1)
-                        )
+                    defaultIcon
                 }
             }
             .frame(width: 64, height: 64)
@@ -283,17 +234,35 @@ struct AppIcon: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 70, maxHeight: 30)
         }
-        .onHover { hovering in
-            isHovered = hovering
-        }
+        .onHover { isHovered = $0 }
         .onTapGesture {
             isPressed = true
             viewModel.launchApp(app)
-            
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isPressed = false
             }
         }
+    }
+    
+    private var defaultIcon: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .fill(LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.blue.opacity(0.3),
+                    Color.purple.opacity(0.3)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ))
+            .overlay(
+                Image(systemName: "app.dashed")
+                    .font(.title2)
+                    .foregroundStyle(.primary.opacity(0.7))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(.primary.opacity(0.1), lineWidth: 1)
+            )
     }
 }
 
@@ -359,7 +328,7 @@ struct LaunchpadBackground: NSViewRepresentable {
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
-        visualEffectView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.3).cgColor
+        visualEffectView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.001).cgColor
         return visualEffectView
     }
     
@@ -390,33 +359,26 @@ class ScrollDetectorView: NSView {
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        setup()
+        setupView()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        setup()
+        setupView()
     }
     
-    private func setup() {
-        self.wantsLayer = true
-        self.layer?.backgroundColor = NSColor.clear.cgColor
-        // 使用現代的觸控事件 API
-        self.allowedTouchTypes = [.direct, .indirect]
+    private func setupView() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        allowedTouchTypes = [.direct, .indirect]
     }
     
     override func scrollWheel(with event: NSEvent) {
         let currentTime = CFAbsoluteTimeGetCurrent()
-        
-        // 防止事件過於頻繁
         guard currentTime - lastScrollTime > 0.05 else { return }
         lastScrollTime = currentTime
         
         let deltaX = event.scrollingDeltaX
-        
-        print("滾輪事件: deltaX = \(deltaX), deltaY = \(event.scrollingDeltaY)")
-        
-        // 降低閾值，讓滾動更敏感
         if abs(deltaX) > 1.0 {
             DispatchQueue.main.async {
                 self.scrollCallback?(deltaX)
@@ -424,23 +386,17 @@ class ScrollDetectorView: NSView {
         }
     }
     
-    override var acceptsFirstResponder: Bool {
-        return true
-    }
-    
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        return true
-    }
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // 確保視圖可以接收事件
-        self.window?.makeFirstResponder(self)
+        window?.makeFirstResponder(self)
     }
     
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        self.window?.makeFirstResponder(self)
+        window?.makeFirstResponder(self)
     }
 }
 
