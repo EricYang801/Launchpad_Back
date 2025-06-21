@@ -23,6 +23,7 @@ struct LaunchpadView: View {
     @State private var searchText = ""
     @State private var scrollMonitor: Any?
     @State private var scrollGestureInProgress = false
+    @State private var keyMonitor: Any?
     
     // 配置
     private let appsPerPage = 35
@@ -96,9 +97,11 @@ struct LaunchpadView: View {
         .onAppear {
             viewModel.loadInstalledApps()
             setupScrollMonitor()
+            setupKeyMonitor()
         }
         .onDisappear {
             removeScrollMonitor()
+            removeKeyMonitor()
         }
     }
     
@@ -162,6 +165,57 @@ struct LaunchpadView: View {
         if let monitor = scrollMonitor {
             NSEvent.removeMonitor(monitor)
             scrollMonitor = nil
+        }
+    }
+    
+    private func setupKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Command + W to hide window
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "w" {
+                NSApplication.shared.keyWindow?.orderOut(nil)
+                return nil
+            }
+            
+            // Command + Q to terminate app
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "q" {
+                NSApp.terminate(nil)
+                return nil
+            }
+            
+            // Escape key to deselect search bar or hide window
+            if event.keyCode == 53 { // 53 is the keycode for Escape key
+                if !searchText.isEmpty {
+                    searchText = ""
+                } else {
+                    NSApplication.shared.keyWindow?.orderOut(nil)
+                }
+                return nil
+            }
+            
+            // Left arrow key to go to the previous page
+            if event.keyCode == 123 { // 123 is the keycode for Left Arrow
+                if self.currentPage > 0 {
+                    self.currentPage -= 1
+                }
+                return nil
+            }
+            
+            // Right arrow key to go to the next page
+            if event.keyCode == 124 { // 124 is the keycode for Right Arrow
+                if self.currentPage < self.totalPages - 1 {
+                    self.currentPage += 1
+                }
+                return nil
+            }
+            
+            return event
+        }
+    }
+    
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
         }
     }
     
