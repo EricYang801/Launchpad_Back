@@ -4,7 +4,7 @@
 
 As macOS 26 Tahoe removed the native Launchpad, this SwiftUI application was created for convenience to replicate its core functionality. It provides a user-friendly interface to view, search, and launch installed applications in a familiar grid-based, paginated layout.
 
-![Example](./Example.jpg)
+![Example](./Example.png)
 
 ## Features
 

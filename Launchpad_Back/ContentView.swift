@@ -274,7 +274,7 @@ struct AppIcon: View {
                     defaultIcon
                 }
             }
-            .frame(width: 64, height: 64)
+            .frame(width: 80, height: 80)
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .scaleEffect(isPressed ? 0.9 : (isHovered ? 1.05 : 1.0))
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
