@@ -12,11 +12,42 @@ import AppKit
 class AppScannerService {
     private let fileManager = FileManager.default
     
-    private let scanPaths: [(path: String, isSystemApp: Bool)] = [
-        ("/System/Applications", true),
-        ("/System/Applications/Utilities", true),
-        ("/Applications", false)
+    /// 應用掃描排除的 Bundle ID 列表（隱藏的系統應用）
+    private let excludedBundleIDs: Set<String> = [
+        "com.apple.installer",
+        "com.apple.LaunchPadMigrator",
+        "com.apple.AirPlayUIAgent",
+        "com.apple.SoftwareUpdateNotificationManager",
+        "com.apple.CoreLocationAgent",
+        "com.apple.OBEXAgent",
+        "com.apple.ODSAgent",
+        "com.apple.PIPAgent",
+        "com.apple.ReportPanic",
+        "com.apple.ScreenSaverEngine",
+        "com.apple.loginwindow"
     ]
+    
+    private var scanPaths: [(path: String, isSystemApp: Bool)] {
+        var paths: [(String, Bool)] = [
+            ("/System/Applications", true),
+            ("/System/Applications/Utilities", true),
+            ("/Applications", false),
+            ("/Applications/Utilities", false)
+        ]
+        
+        // 添加用戶應用程式目錄
+        if let userAppsPath = fileManager.urls(for: .applicationDirectory, in: .userDomainMask).first?.path {
+            paths.append((userAppsPath, false))
+        }
+        
+        // 添加 Homebrew Cask 應用目錄
+        let homebrewCaskPath = "/opt/homebrew/Caskroom"
+        if fileManager.fileExists(atPath: homebrewCaskPath) {
+            paths.append((homebrewCaskPath, false))
+        }
+        
+        return paths
+    }
     
     /// 掃描所有已安裝的應用程式
     /// - Returns: 應用程式陣列
@@ -31,7 +62,7 @@ class AppScannerService {
             group.enter()
             queue.async { [weak self] in
                 defer { group.leave() }
-                let apps = self?.scanAppsInDirectory(path, isSystemApp: isSystemApp) ?? []
+                let apps = self?.scanAppsInDirectory(path, isSystemApp: isSystemApp, recursive: false) ?? []
                 
                 lock.lock()
                 allApps.append(contentsOf: apps)
@@ -41,8 +72,9 @@ class AppScannerService {
         
         group.wait()
         
-        // 去重並排序
+        // 過濾排除的應用、去重並排序
         return removeDuplicates(from: allApps)
+            .filter { !excludedBundleIDs.contains($0.bundleID) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
@@ -50,15 +82,36 @@ class AppScannerService {
     /// - Parameters:
     ///   - path: 目錄路徑
     ///   - isSystemApp: 是否為系統應用程式
+    ///   - recursive: 是否遞迴掃描子目錄
     /// - Returns: 應用程式陣列
-    private func scanAppsInDirectory(_ path: String, isSystemApp: Bool) -> [AppItem] {
+    private func scanAppsInDirectory(_ path: String, isSystemApp: Bool, recursive: Bool = false) -> [AppItem] {
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
             return []
         }
         
-        return contents
-            .filter { $0.hasSuffix(".app") }
-            .compactMap { createAppItem(from: $0, in: path, isSystemApp: isSystemApp) }
+        var apps: [AppItem] = []
+        
+        for item in contents {
+            let fullPath = "\(path)/\(item)"
+            var isDirectory: ObjCBool = false
+            
+            guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDirectory),
+                  isDirectory.boolValue else {
+                continue
+            }
+            
+            if item.hasSuffix(".app") {
+                if let app = createAppItem(from: item, in: path, isSystemApp: isSystemApp) {
+                    apps.append(app)
+                }
+            } else if recursive {
+                // 遞迴掃描子目錄
+                let subApps = scanAppsInDirectory(fullPath, isSystemApp: isSystemApp, recursive: true)
+                apps.append(contentsOf: subApps)
+            }
+        }
+        
+        return apps
     }
     
     /// 從檔案名稱創建應用程式項目

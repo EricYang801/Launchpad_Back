@@ -7,13 +7,21 @@
 
 import AppKit
 
+/// Launchpad 項目類型協議
+protocol LaunchpadItem: Identifiable, Hashable {
+    var id: UUID { get }
+    var name: String { get }
+    var displayOrder: Int { get set }
+}
+
 /// 表示 macOS 應用程式的數據模型
-struct AppItem: Identifiable, Hashable {
+struct AppItem: LaunchpadItem {
     let id = UUID()
     let name: String
     let bundleID: String
     let path: String
     let isSystemApp: Bool
+    var displayOrder: Int = 0
     
     /// 獲取應用程式圖示（會使用快取）
     var appIcon: NSImage? {
@@ -26,5 +34,94 @@ struct AppItem: Identifiable, Hashable {
     
     static func == (lhs: AppItem, rhs: AppItem) -> Bool {
         lhs.bundleID == rhs.bundleID
+    }
+}
+
+/// 表示應用程式文件夾的數據模型
+struct AppFolder: LaunchpadItem {
+    let id: UUID
+    var name: String
+    var apps: [AppItem]
+    var displayOrder: Int = 0
+    var isExpanded: Bool = false
+    
+    init(id: UUID = UUID(), name: String, apps: [AppItem], displayOrder: Int = 0) {
+        self.id = id
+        self.name = name
+        self.apps = apps
+        self.displayOrder = displayOrder
+    }
+    
+    /// 文件夾中應用數量
+    var appCount: Int {
+        apps.count
+    }
+    
+    /// 獲取文件夾預覽圖示（最多顯示 9 個應用圖示）
+    var previewIcons: [NSImage?] {
+        Array(apps.prefix(9)).map { $0.appIcon }
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: AppFolder, rhs: AppFolder) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    /// 添加應用到文件夾
+    mutating func addApp(_ app: AppItem) {
+        if !apps.contains(where: { $0.bundleID == app.bundleID }) {
+            apps.append(app)
+        }
+    }
+    
+    /// 從文件夾移除應用
+    mutating func removeApp(_ app: AppItem) {
+        apps.removeAll { $0.bundleID == app.bundleID }
+    }
+}
+
+/// Launchpad 中可顯示的項目（可以是應用或文件夾）
+enum LaunchpadDisplayItem: Identifiable, Hashable {
+    case app(AppItem)
+    case folder(AppFolder)
+    
+    var id: UUID {
+        switch self {
+        case .app(let app): return app.id
+        case .folder(let folder): return folder.id
+        }
+    }
+    
+    var name: String {
+        switch self {
+        case .app(let app): return app.name
+        case .folder(let folder): return folder.name
+        }
+    }
+    
+    var displayOrder: Int {
+        get {
+            switch self {
+            case .app(let app): return app.displayOrder
+            case .folder(let folder): return folder.displayOrder
+            }
+        }
+        set {
+            switch self {
+            case .app(var app):
+                app.displayOrder = newValue
+                self = .app(app)
+            case .folder(var folder):
+                folder.displayOrder = newValue
+                self = .folder(folder)
+            }
+        }
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }
