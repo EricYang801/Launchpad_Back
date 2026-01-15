@@ -11,12 +11,21 @@ import AppKit
 /// 負責監聽和處理全局鍵盤事件
 class KeyboardEventManager {
     private var keyMonitor: Any?
+    
+    // MARK: - 回調函數
     private let onLeftArrow: () -> Void
     private let onRightArrow: () -> Void
     private let onEscape: () -> Void
     private let onCommandW: () -> Void
     private let onCommandQ: () -> Void
     
+    /// 初始化鍵盤事件管理器
+    /// - Parameters:
+    ///   - onLeftArrow: 左箭頭按下時的回調（也用於上箭頭）
+    ///   - onRightArrow: 右箭頭按下時的回調（也用於下箭頭）
+    ///   - onEscape: Escape 按下時的回調
+    ///   - onCommandW: Command+W 按下時的回調
+    ///   - onCommandQ: Command+Q 按下時的回調
     init(
         onLeftArrow: @escaping () -> Void,
         onRightArrow: @escaping () -> Void,
@@ -37,6 +46,7 @@ class KeyboardEventManager {
             self?.handleKeyEvent(event)
             return event
         }
+        Logger.debug("KeyboardEventManager started listening")
     }
     
     /// 停止監聽鍵盤事件
@@ -45,46 +55,47 @@ class KeyboardEventManager {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
         }
+        Logger.debug("KeyboardEventManager stopped listening")
     }
     
     private func handleKeyEvent(_ event: NSEvent) {
-        // Command + W to hide window
+        // Command + W 隱藏視窗
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "w" {
             onCommandW()
             return
         }
         
-        // Command + Q to terminate app
+        // Command + Q 結束應用
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "q" {
             onCommandQ()
             return
         }
         
-        // Escape key
+        // Escape 鍵 (keyCode: 53)
         if event.keyCode == 53 {
             onEscape()
             return
         }
         
-        // Left arrow key
+        // 左箭頭鍵 (keyCode: 123) - 上一頁
         if event.keyCode == 123 {
             onLeftArrow()
             return
         }
         
-        // Right arrow key
+        // 右箭頭鍵 (keyCode: 124) - 下一頁
         if event.keyCode == 124 {
             onRightArrow()
             return
         }
         
-        // Up arrow key - 也可以用來翻頁
+        // 上箭頭鍵 (keyCode: 126) - 上一頁（備用操作）
         if event.keyCode == 126 {
             onLeftArrow()
             return
         }
         
-        // Down arrow key - 也可以用來翻頁
+        // 下箭頭鍵 (keyCode: 125) - 下一頁（備用操作）
         if event.keyCode == 125 {
             onRightArrow()
             return

@@ -37,6 +37,12 @@ struct LaunchpadView: View {
     @State private var dropTargetId: UUID?
     @State private var dropTargetIndex: Int = -1
     
+    // 浮動拖曳狀態（用於從文件夾拖出或跨頁拖曳）
+    @State private var floatingDragItem: LaunchpadDisplayItem?
+    @State private var floatingDragLocation: CGPoint = .zero
+    @State private var floatingDragSourcePage: Int = 0
+    @State private var floatingDragSourceIndex: Int = 0
+    
     private var filteredItems: [LaunchpadDisplayItem] {
         if searchVM.searchText.isEmpty {
             // 無搜尋時顯示 displayItems（包含文件夾）
@@ -120,14 +126,15 @@ struct LaunchpadView: View {
                                 draggingItemId: draggingItemId,
                                 dropTargetId: dropTargetId,
                                 onItemTap: { item in
-                                    if !editModeManager.isEditing {
-                                        switch item {
-                                        case .app(let app):
+                                    switch item {
+                                    case .app(let app):
+                                        if !editModeManager.isEditing {
                                             launchpadVM.launchApp(app)
-                                        case .folder(let folder):
-                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                                expandedFolder = folder
-                                            }
+                                        }
+                                    case .folder(let folder):
+                                        // 編輯模式下也可以進入資料夾
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            expandedFolder = folder
                                         }
                                     }
                                 },
@@ -135,17 +142,35 @@ struct LaunchpadView: View {
                                     editModeManager.enterEditMode()
                                 },
                                 onDragChanged: { itemId, location, appIndex in
+                                    // location 現在是全局螢幕座標（coordinateSpace: .global）
+                                    let screenLocation = location
+                                    
+                                    // 立即進入浮動拖曳模式
+                                    if floatingDragItem == nil {
+                                        if let item = filteredItems.first(where: { $0.id == itemId }) {
+                                            floatingDragItem = item
+                                            floatingDragSourcePage = paginationVM.currentPage
+                                            floatingDragSourceIndex = appIndex
+                                        }
+                                    }
+                                    
+                                    floatingDragLocation = screenLocation
                                     draggingItemId = itemId
-                                    // 查找懸停目標（使用偏移量計算）
-                                    let result = findDropTarget(at: location, excludingId: itemId, in: geometry, draggedAppIndex: appIndex)
+                                    
+                                    // 檢測邊緣換頁
+                                    _ = checkEdgeForPageChange(screenLocation: screenLocation, geometry: geometry)
+                                    
+                                    // 計算 drop target
+                                    let result = findDropTargetByScreenLocation(at: screenLocation, excludingId: itemId, in: geometry)
                                     dropTargetId = result.targetId
                                     dropTargetIndex = result.targetIndex
                                 },
                                 onDragEnded: { itemId, appIndex in
-                                    handleDrop(draggedItemId: itemId, draggedIndex: appIndex)
+                                    handleFloatingDrop()
                                     draggingItemId = nil
                                     dropTargetId = nil
                                     dropTargetIndex = -1
+                                    floatingDragItem = nil
                                 }
                             )
                         }
@@ -190,16 +215,81 @@ struct LaunchpadView: View {
                         },
                         onRename: { newName in
                             launchpadVM.renameFolder(folder, to: newName)
-                        },
-                        onReorder: { fromIndex, toIndex in
-                            launchpadVM.reorderAppsInFolder(folder, from: fromIndex, to: toIndex)
-                            // 更新展開的文件夾以反映變化
                             if let updatedFolder = launchpadVM.folders.first(where: { $0.id == folder.id }) {
                                 expandedFolder = updatedFolder
                             }
-                        }
+                        },
+                        onReorder: { fromIndex, toIndex in
+                            launchpadVM.reorderAppsInFolder(folder, from: fromIndex, to: toIndex)
+                            if let updatedFolder = launchpadVM.folders.first(where: { $0.id == folder.id }) {
+                                expandedFolder = updatedFolder
+                            }
+                        },
+                        onRemoveApp: { app in
+                            launchpadVM.removeAppFromFolder(app: app, folder: folder)
+                            if let updatedFolder = launchpadVM.folders.first(where: { $0.id == folder.id }) {
+                                if updatedFolder.apps.isEmpty {
+                                    expandedFolder = nil
+                                } else {
+                                    expandedFolder = updatedFolder
+                                }
+                            } else {
+                                expandedFolder = nil
+                            }
+                        },
+                        onStartDragOut: { app, screenLocation in
+                            // 從文件夾拖出 - 進入浮動拖曳模式
+                            floatingDragItem = .app(app)
+                            floatingDragLocation = screenLocation
+                            floatingDragSourcePage = paginationVM.currentPage
+                            floatingDragSourceIndex = -1  // 來自文件夾，沒有 grid index
+                            
+                            // 從文件夾中移除應用（但不插入到 displayItems，等放置時再決定位置）
+                            launchpadVM.removeAppFromFolderOnly(app: app, folder: folder)
+                            
+                            // 進入編輯模式
+                            editModeManager.enterEditMode()
+                            
+                            // 計算 drop target（初始）
+                            // Note: 不關閉文件夾，讓它繼續追蹤拖曳
+                        },
+                        onDragOutContinue: { screenLocation in
+                            // 持續更新浮動拖曳位置
+                            floatingDragLocation = screenLocation
+                            
+                            // 檢測邊緣換頁
+                            _ = checkEdgeForPageChange(screenLocation: screenLocation, geometry: geometry)
+                            
+                            // 計算 drop target
+                            if let item = floatingDragItem {
+                                let result = findDropTargetByScreenLocation(at: screenLocation, excludingId: item.id, in: geometry)
+                                dropTargetId = result.targetId
+                                dropTargetIndex = result.targetIndex
+                            }
+                        },
+                        onDragOutEnd: {
+                            // 拖曳結束 - 處理放置並關閉文件夾
+                            handleFloatingDrop()
+                            
+                            // 清除狀態
+                            draggingItemId = nil
+                            dropTargetId = nil
+                            dropTargetIndex = -1
+                            floatingDragItem = nil
+                            
+                            // 關閉文件夾
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                expandedFolder = nil
+                            }
+                        },
+                        initialEditingMode: editModeManager.isEditing
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+                
+                // 浮動拖曳的 icon（跟著滑鼠）
+                if let item = floatingDragItem {
+                    floatingDragOverlay(item: item, location: floatingDragLocation, in: geometry)
                 }
             }
             .onAppear {
@@ -219,119 +309,305 @@ struct LaunchpadView: View {
         }
     }
     
-    // MARK: - 拖放處理
+    // MARK: - 浮動拖曳視圖
     
-    /// 查找拖放目標，返回目標ID和目標索引
-    private func findDropTarget(at location: CGPoint, excludingId: UUID, in geometry: GeometryProxy, draggedAppIndex: Int) -> (targetId: UUID?, targetIndex: Int) {
-        let layoutConfig = paginationVM.layoutConfig
-        let itemWidth = GridLayoutManager.itemWidth + GridLayoutManager.horizontalSpacing
-        let itemHeight = GridLayoutManager.itemHeight + GridLayoutManager.verticalSpacing
-        let columns = layoutConfig.columns
+    @ViewBuilder
+    private func floatingDragOverlay(item: LaunchpadDisplayItem, location: CGPoint, in geometry: GeometryProxy) -> some View {
+        ZStack {
+            // 顯示放置指示器（藍色）
+            if dropTargetIndex >= 0 && dropTargetId == nil {
+                screenLocationDropIndicator(at: dropTargetIndex, in: geometry)
+            }
+            
+            // 顯示放置指示器（藍色）
+            if dropTargetIndex >= 0 && dropTargetId == nil {
+                screenLocationDropIndicator(at: dropTargetIndex, in: geometry)
+            }
+            
+            // 跟隨滑鼠的圖標
+            VStack(spacing: 4) {
+                switch item {
+                case .app(let app):
+                    if let icon = app.appIcon {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .shadow(color: .black.opacity(0.5), radius: 8)
+                    }
+                    Text(app.name)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                case .folder(let folder):
+                    // 簡化的文件夾圖標（用於拖曳）
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            LazyVGrid(columns: [GridItem(.fixed(16)), GridItem(.fixed(16)), GridItem(.fixed(16))], spacing: 2) {
+                                ForEach(folder.apps.prefix(9), id: \.id) { app in
+                                    if let icon = app.appIcon {
+                                        Image(nsImage: icon)
+                                            .resizable()
+                                            .frame(width: 14, height: 14)
+                                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                }
+                            }
+                            .padding(4)
+                        )
+                        .shadow(color: .black.opacity(0.5), radius: 8)
+                    Text(folder.name)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                }
+            }
+            .position(location)
+        }
+    }
+    
+    // MARK: - 跨頁拖動支援
+    
+    // 邊緣檢測狀態
+    @State private var edgeScrollTimer: Timer?
+    @State private var lastEdgeCheckTime: Date = .distantPast
+    @State private var lastEdgeDirection: Int = 0  // -1: 左, 0: 無, 1: 右
+    @State private var isWaitingForEdgeExit: Bool = false  // 等待離開邊緣
+    
+    /// 使用絕對螢幕位置檢測邊緣換頁
+    private func checkEdgeForPageChange(screenLocation: CGPoint, geometry: GeometryProxy) -> (pageChanged: Bool, previousPage: Int) {
+        let screenWidth = geometry.size.width
+        let edgeThreshold: CGFloat = 50
+        let previousPage = paginationVM.currentPage
         
-        let pageItems = paginationVM.itemsForPage(filteredItems, page: paginationVM.currentPage)
+        var currentDirection: Int = 0
         
-        // 計算被拖動項目的原始位置
-        let draggedCol = draggedAppIndex % columns
-        let draggedRow = draggedAppIndex / columns
-        
-        // location 是相對於被拖動圖標的偏移量，計算目標位置
-        // 計算精確的偏移量（以格子為單位）
-        let exactColOffset = location.x / itemWidth
-        let exactRowOffset = location.y / itemHeight
-        
-        // 四捨五入到最近的格子
-        let colOffset = Int(round(exactColOffset))
-        let rowOffset = Int(round(exactRowOffset))
-        
-        let targetCol = draggedCol + colOffset
-        let targetRow = draggedRow + rowOffset
-        
-        Logger.debug("findDropTarget: offset=(\(location.x), \(location.y)), colOffset=\(colOffset), rowOffset=\(rowOffset)")
-        Logger.debug("findDropTarget: dragged(\(draggedCol),\(draggedRow)) -> target(\(targetCol),\(targetRow))")
-        
-        guard targetCol >= 0, targetCol < columns, targetRow >= 0 else { 
-            Logger.debug("findDropTarget: out of grid bounds")
-            return (nil, -1) 
+        if screenLocation.x < edgeThreshold {
+            currentDirection = -1
+        } else if screenLocation.x > screenWidth - edgeThreshold {
+            currentDirection = 1
         }
         
-        let targetIndex = targetRow * columns + targetCol
+        // 如果正在等待離開邊緣
+        if isWaitingForEdgeExit {
+            if currentDirection == 0 {
+                isWaitingForEdgeExit = false
+                lastEdgeDirection = 0
+            }
+            return (false, previousPage)
+        }
         
-        // 如果目標索引超出當前頁面項目數量，表示拖到空白區域
-        guard targetIndex >= 0, targetIndex < pageItems.count else { 
-            Logger.debug("findDropTarget: index \(targetIndex) out of range (count: \(pageItems.count)), reorder to end")
+        if currentDirection == 0 {
+            lastEdgeDirection = 0
+            lastEdgeCheckTime = .distantPast
+            return (false, previousPage)
+        }
+        
+        if currentDirection != lastEdgeDirection {
+            lastEdgeDirection = currentDirection
+            lastEdgeCheckTime = Date()
+            return (false, previousPage)
+        }
+        
+        let now = Date()
+        guard now.timeIntervalSince(lastEdgeCheckTime) > 0.3 else { return (false, previousPage) }
+        
+        var pageChanged = false
+        
+        if currentDirection == -1 && paginationVM.currentPage > 0 {
+            isWaitingForEdgeExit = true
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                paginationVM.previousPage()
+            }
+            pageChanged = true
+            Logger.info("Edge detected: switching to previous page (\(paginationVM.currentPage))")
+        }
+        else if currentDirection == 1 && paginationVM.currentPage < totalPages - 1 {
+            isWaitingForEdgeExit = true
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                paginationVM.nextPage(totalPages: totalPages)
+            }
+            pageChanged = true
+            Logger.info("Edge detected: switching to next page (\(paginationVM.currentPage))")
+        }
+        
+        return (pageChanged, previousPage)
+    }
+    
+    /// 使用絕對螢幕位置查找 drop target
+    private func findDropTargetByScreenLocation(at screenLocation: CGPoint, excludingId: UUID, in geometry: GeometryProxy) -> (targetId: UUID?, targetIndex: Int) {
+        let layoutConfig = paginationVM.layoutConfig
+        let columns = layoutConfig.columns
+        let rows = layoutConfig.rows
+        
+        let gridWidth = layoutConfig.gridWidth
+        let startX = (geometry.size.width - gridWidth) / 2
+        
+        // 計算 grid 實際高度和起始 Y（考慮垂直置中）
+        let itemHeight = GridLayoutManager.itemHeight + GridLayoutManager.verticalSpacing
+        let gridHeight = CGFloat(rows) * itemHeight - GridLayoutManager.verticalSpacing
+        
+        // 頂部區域高度（搜尋欄或編輯模式頭部）約 80
+        let topAreaHeight: CGFloat = 80
+        // 底部區域高度（頁面指示器）約 60
+        let bottomAreaHeight: CGFloat = 60
+        // 可用高度
+        let availableHeight = geometry.size.height - topAreaHeight - bottomAreaHeight
+        // Grid 垂直置中後的起始 Y
+        let startY = topAreaHeight + (availableHeight - gridHeight) / 2
+        
+        let itemWidth = GridLayoutManager.itemWidth + GridLayoutManager.horizontalSpacing
+        
+        // 計算目標列和行
+        let col = Int((screenLocation.x - startX + itemWidth / 2) / itemWidth)
+        let row = Int((screenLocation.y - startY + itemHeight / 2) / itemHeight)
+        
+        guard col >= 0, col < columns, row >= 0 else {
+            return (nil, -1)
+        }
+        
+        let targetIndex = row * columns + col
+        let pageItems = paginationVM.itemsForPage(filteredItems, page: paginationVM.currentPage)
+        
+        guard targetIndex >= 0, targetIndex < pageItems.count else {
+            // 拖到空白區域，返回末尾位置
             return (nil, min(targetIndex, pageItems.count))
         }
         
         let targetItem = pageItems[targetIndex]
         
-        // 不能放到自己身上
-        guard targetItem.id != excludingId else { 
-            Logger.debug("findDropTarget: same as dragging item")
-            return (nil, -1) 
+        guard targetItem.id != excludingId else {
+            return (nil, -1)
         }
         
-        // 計算拖動位置相對於目標格子中心的偏移
-        // 如果偏移量較小（即位置接近原始格子），則視為重新排序
-        // 如果偏移量較大（即明確移動到另一個格子上），則視為創建文件夾
+        // 計算是在圖標中心還是邊緣
+        let cellCenterX = startX + CGFloat(col) * itemWidth + itemWidth / 2
+        let cellCenterY = startY + CGFloat(row) * itemHeight + GridLayoutManager.iconSize / 2
         
-        // 計算偏移在當前格子內的精確位置（-0.5 ~ 0.5 的範圍，0 表示格子中心）
-        let fractionalCol = exactColOffset - Double(colOffset)
-        let fractionalRow = exactRowOffset - Double(rowOffset)
+        let distX = abs(screenLocation.x - cellCenterX)
+        let distY = abs(screenLocation.y - cellCenterY)
         
-        // 定義閾值：如果在格子中心 70% 的區域內，視為創建文件夾
-        let centerThreshold = 0.35
-        let isInIconCenter = abs(fractionalCol) < centerThreshold && abs(fractionalRow) < centerThreshold
+        // 如果在圖標中心區域（70% 範圍），視為創建文件夾
+        let centerThresholdX = itemWidth * 0.35
+        let centerThresholdY = GridLayoutManager.iconSize * 0.35
         
-        Logger.debug("findDropTarget: fractional=(\(fractionalCol), \(fractionalRow)), isInCenter=\(isInIconCenter)")
-        
-        if isInIconCenter {
-            // 在圖標中心區域，視為創建文件夾
-            Logger.info("findDropTarget: found target \(targetItem.name) at index \(targetIndex) (in icon center)")
+        if distX < centerThresholdX && distY < centerThresholdY {
+            Logger.debug("findDropTargetByScreen: found target \(targetItem.name) at index \(targetIndex)")
             return (targetItem.id, targetIndex)
         } else {
-            // 在邊緣區域，視為重新排序
-            Logger.info("findDropTarget: reorder to index \(targetIndex) (near edge)")
+            Logger.debug("findDropTargetByScreen: reorder to index \(targetIndex)")
             return (nil, targetIndex)
         }
     }
     
-    private func handleDrop(draggedItemId: UUID, draggedIndex: Int) {
-        Logger.info("handleDrop called: draggedId=\(draggedItemId), targetId=\(String(describing: dropTargetId)), targetIndex=\(dropTargetIndex)")
+    /// 螢幕位置的放置指示器
+    @ViewBuilder
+    private func screenLocationDropIndicator(at index: Int, in geometry: GeometryProxy) -> some View {
+        let layoutConfig = paginationVM.layoutConfig
+        let columns = layoutConfig.columns
+        let rows = layoutConfig.rows
         
-        // 如果有目標項目，嘗試創建文件夾或添加到文件夾
-        if let targetId = dropTargetId {
-            // 找到被拖拽的項目和目標項目
-            guard let draggedItem = filteredItems.first(where: { $0.id == draggedItemId }),
-                  let targetItem = filteredItems.first(where: { $0.id == targetId }) else {
-                Logger.error("handleDrop: could not find items")
-                return
-            }
-            
-            // 只有兩個都是應用時才能創建文件夾
-            switch (draggedItem, targetItem) {
+        let gridWidth = layoutConfig.gridWidth
+        let startX = (geometry.size.width - gridWidth) / 2
+        
+        // 計算 grid 實際高度和起始 Y（考慮垂直置中）
+        let itemHeight = GridLayoutManager.itemHeight + GridLayoutManager.verticalSpacing
+        let gridHeight = CGFloat(rows) * itemHeight - GridLayoutManager.verticalSpacing
+        
+        let topAreaHeight: CGFloat = 80
+        let bottomAreaHeight: CGFloat = 60
+        let availableHeight = geometry.size.height - topAreaHeight - bottomAreaHeight
+        let startY = topAreaHeight + (availableHeight - gridHeight) / 2
+        
+        let itemWidth = GridLayoutManager.itemWidth + GridLayoutManager.horizontalSpacing
+        
+        let col = index % columns
+        let row = index / columns
+        
+        let x = startX + CGFloat(col) * itemWidth
+        let y = startY + CGFloat(row) * itemHeight + GridLayoutManager.itemHeight / 2
+        
+        RoundedRectangle(cornerRadius: 2)
+            .fill(Color.blue)
+            .frame(width: 4, height: GridLayoutManager.itemHeight)
+            .shadow(color: .blue.opacity(0.5), radius: 4)
+            .position(x: x, y: y)
+    }
+    
+    /// 處理浮動拖曳放置
+    private func handleFloatingDrop() {
+        guard let item = floatingDragItem else { return }
+        
+        let itemsPerPage = paginationVM.layoutConfig.itemsPerPage
+        let pageOffset = paginationVM.currentPage * itemsPerPage
+        let sourceGlobalIndex = floatingDragSourcePage * itemsPerPage + floatingDragSourceIndex
+        
+        // 檢查是否是從 displayItems 中拖出的（不是從文件夾拖出的）
+        let isFromGrid = floatingDragSourceIndex >= 0
+        
+        if let targetId = dropTargetId, let targetItem = filteredItems.first(where: { $0.id == targetId }) {
+            // 放到目標上 - 創建文件夾或添加到文件夾
+            switch (item, targetItem) {
             case (.app(let draggedApp), .app(let targetApp)):
-                // 創建新文件夾
-                let folder = launchpadVM.createFolder(app1: targetApp, app2: draggedApp)
-                Logger.info("Created folder '\(folder.name)' with \(draggedApp.name) and \(targetApp.name)")
+                if isFromGrid {
+                    // 從 grid 拖來的，需要先移除原位置
+                    launchpadVM.moveItemToCreateFolder(from: sourceGlobalIndex, targetApp: targetApp, draggedApp: draggedApp)
+                } else {
+                    _ = launchpadVM.createFolder(app1: targetApp, app2: draggedApp)
+                }
+                Logger.info("Created folder with \(draggedApp.name) and \(targetApp.name)")
             case (.app(let draggedApp), .folder(let targetFolder)):
-                // 將應用拖入現有文件夾
-                launchpadVM.addAppToFolder(app: draggedApp, folder: targetFolder)
+                if isFromGrid {
+                    launchpadVM.moveItemToFolder(from: sourceGlobalIndex, folder: targetFolder)
+                } else {
+                    launchpadVM.addAppToFolder(app: draggedApp, folder: targetFolder)
+                }
                 Logger.info("Added \(draggedApp.name) to folder '\(targetFolder.name)'")
-            default:
-                Logger.info("handleDrop: invalid drop combination")
+            case (.folder(_), .app(_)):
+                // 文件夾拖到應用上 - 只做重新排序
+                if isFromGrid && dropTargetIndex >= 0 {
+                    let targetGlobalIndex = pageOffset + dropTargetIndex
+                    launchpadVM.moveItem(from: sourceGlobalIndex, to: targetGlobalIndex)
+                }
+            case (.folder(_), .folder(_)):
+                // 文件夾拖到文件夾上 - 只做重新排序
+                if isFromGrid && dropTargetIndex >= 0 {
+                    let targetGlobalIndex = pageOffset + dropTargetIndex
+                    launchpadVM.moveItem(from: sourceGlobalIndex, to: targetGlobalIndex)
+                }
             }
-        } else if dropTargetIndex >= 0 && dropTargetIndex != draggedIndex {
-            // 沒有目標項目但有目標位置，進行重新排序
-            let itemsPerPage = paginationVM.layoutConfig.columns * paginationVM.layoutConfig.rows
-            let pageOffset = paginationVM.currentPage * itemsPerPage
-            let sourceIndex = pageOffset + draggedIndex
-            let destinationIndex = pageOffset + dropTargetIndex
-            
-            Logger.info("handleDrop: reordering from \(sourceIndex) to \(destinationIndex)")
-            launchpadVM.moveItem(from: sourceIndex, to: destinationIndex)
+        } else if dropTargetIndex >= 0 {
+            // 放到空位 - 重新排序
+            let targetGlobalIndex = pageOffset + dropTargetIndex
+            if isFromGrid {
+                launchpadVM.moveItem(from: sourceGlobalIndex, to: targetGlobalIndex)
+                Logger.info("Moved item from \(sourceGlobalIndex) to \(targetGlobalIndex)")
+            } else {
+                // 從文件夾拖出來的
+                if case .app(let app) = item {
+                    launchpadVM.insertAppAt(app: app, index: targetGlobalIndex)
+                    Logger.info("Inserted \(app.name) at index \(targetGlobalIndex)")
+                }
+            }
         } else {
-            Logger.info("handleDrop: no valid drop target")
+            // 沒有有效目標 - 放到末尾（僅對文件夾拖出的 app 有效）
+            if !isFromGrid {
+                if case .app(let app) = item {
+                    launchpadVM.insertAppAt(app: app, index: launchpadVM.displayItems.count)
+                    Logger.info("Inserted \(app.name) at end")
+                }
+            }
         }
+        
+        // 清除狀態
+        floatingDragItem = nil
+        floatingDragLocation = .zero
+        dropTargetId = nil
+        dropTargetIndex = -1
     }
     
     // MARK: - Private Methods
@@ -465,7 +741,8 @@ struct PageViewEditable: View {
         )
         .opacity(pageIndex == currentPage ? 1.0 : 0.6)
         .scaleEffect(pageIndex == currentPage ? 1.0 : 0.92)
-        .allowsHitTesting(pageIndex == currentPage)
+        // 在拖曳過程中，保持原頁面可以接收手勢
+        .allowsHitTesting(pageIndex == currentPage || draggingItemId != nil)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentPage)
     }
 }

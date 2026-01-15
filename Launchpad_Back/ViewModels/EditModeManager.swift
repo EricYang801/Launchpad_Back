@@ -14,14 +14,14 @@ class EditModeManager: ObservableObject {
     /// 是否處於編輯模式
     @Published var isEditing = false
     
-    /// 當前正在拖動的項目 ID
-    @Published var draggingItemId: String?
+    /// 當前正在拖動的項目 ID（使用 UUID 保持類型一致性）
+    @Published var draggingItemId: UUID?
     
     /// 當前拖動的位置
     @Published var dragLocation: CGPoint?
     
-    /// 拖動懸停的目標項目 ID（用於創建文件夾）
-    @Published var dropTargetId: String?
+    /// 拖動懸停的目標項目 ID（用於創建文件夾，使用 UUID 保持類型一致性）
+    @Published var dropTargetId: UUID?
     
     /// 長按持續時間（秒）
     private let longPressDuration: TimeInterval = 0.5
@@ -46,7 +46,7 @@ class EditModeManager: ObservableObject {
     }
     
     /// 開始拖動項目
-    func startDragging(itemId: String, location: CGPoint) {
+    func startDragging(itemId: UUID, location: CGPoint) {
         draggingItemId = itemId
         dragLocation = location
         Logger.debug("Started dragging item: \(itemId)")
@@ -58,7 +58,7 @@ class EditModeManager: ObservableObject {
     }
     
     /// 設置放置目標
-    func setDropTarget(_ itemId: String?) {
+    func setDropTarget(_ itemId: UUID?) {
         if dropTargetId != itemId {
             withAnimation(.easeInOut(duration: 0.15)) {
                 dropTargetId = itemId
