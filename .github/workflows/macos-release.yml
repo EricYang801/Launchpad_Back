@@ -19,12 +19,13 @@ jobs:
       - name: Build App
         run: |
           xcodebuild \
-          -project Launchpad_Back.xcodeproj \
-          -scheme Launchpad_Back \
-          -configuration Release \
-          -destination "platform=macOS" \
-          MACOSX_DEPLOYMENT_TARGET=15.0 \
-          CODE_SIGNING_ALLOWED=NO build
+            -project Launchpad_Back.xcodeproj \
+            -scheme Launchpad_Back \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -derivedDataPath build \
+            MACOSX_DEPLOYMENT_TARGET=15.0 \
+            CODE_SIGNING_ALLOWED=NO build
 
       - name: Zip App
         run: |
