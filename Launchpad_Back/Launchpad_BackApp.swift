@@ -6,7 +6,11 @@
 //
 
 import SwiftUI
-import Carbon
+import AppKit
+
+// MARK: - Global Variables for Event Handling
+
+private var gAppDelegate: AppDelegate?
 
 @main
 struct Launchpad_BackApp: App {
@@ -27,49 +31,63 @@ struct Launchpad_BackApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var globalHotKey: EventHotKeyRef?
-    var eventHandler: EventHandlerRef?
+    private var globalHotKeyMonitor: Any?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Logger.info("Application did finish launching")
+        gAppDelegate = self
         registerGlobalHotKey()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
+        Logger.info("Application will terminate")
         unregisterGlobalHotKey()
+        gAppDelegate = nil
     }
     
+    /// 註冊全局快捷鍵 (Command + L)
     private func registerGlobalHotKey() {
-        // 註冊 Command + L 快捷鍵 (L for Launchpad)
-        let hotKeyID = EventHotKeyID(signature: OSType(0x4C50), id: 1) // 'LP' for Launchpad
-        
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))
-        
-        InstallEventHandler(GetApplicationEventTarget(), { (nextHandler, theEvent, userData) -> OSStatus in
-            // 顯示或隱藏視窗
-            DispatchQueue.main.async {
-                if let window = NSApplication.shared.windows.first {
-                    if window.isVisible {
-                        window.orderOut(nil)
-                    } else {
-                        window.orderFront(nil)
-                        window.makeKey()
-                        NSApplication.shared.activate(ignoringOtherApps: true)
-                    }
-                }
+        // 使用 NSEvent 本地監控器（純 Swift 解決方案）
+        globalHotKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // 檢查 Command + L
+            if event.modifierFlags.contains(.command) && event.keyCode == 37 {
+                self?.toggleWindowVisibility()
+                return nil // 消費事件，防止傳播
             }
-            return noErr
-        }, 1, &eventType, nil, &eventHandler)
+            return event
+        }
         
-        // Command + L (37 是 L 的 keyCode)
-        RegisterEventHotKey(37, UInt32(cmdKey), hotKeyID, GetApplicationEventTarget(), 0, &globalHotKey)
+        Logger.info("Global hot key monitor registered successfully")
     }
     
+    /// 取消註冊全局快捷鍵
     private func unregisterGlobalHotKey() {
-        if let hotKey = globalHotKey {
-            UnregisterEventHotKey(hotKey)
+        if let monitor = globalHotKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalHotKeyMonitor = nil
         }
-        if let handler = eventHandler {
-            RemoveEventHandler(handler)
+        Logger.info("Global hot key monitor unregistered")
+    }
+    
+    /// 切換視窗可見性
+    private func toggleWindowVisibility() {
+        guard let window = NSApplication.shared.windows.first else {
+            Logger.warning("No main window found")
+            return
         }
+        
+        if window.isVisible {
+            window.orderOut(nil)
+            Logger.info("Window hidden")
+        } else {
+            window.orderFront(nil)
+            window.makeKey()
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            Logger.info("Window shown")
+        }
+    }
+    
+    deinit {
+        Logger.debug("AppDelegate deinitialized")
     }
 }
