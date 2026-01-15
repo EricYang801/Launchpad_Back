@@ -23,7 +23,7 @@ jobs:
           -scheme Launchpad_Back \
           -configuration Release \
           -destination "platform=macOS" \
-          MACOSX_DEPLOYMENT_TARGET=13.0 \
+          MACOSX_DEPLOYMENT_TARGET=15.0 \
           CODE_SIGNING_ALLOWED=NO build
 
       - name: Zip App
