@@ -54,19 +54,23 @@ class AppScannerService {
     func scanInstalledApps() -> [AppItem] {
         let group = DispatchGroup()
         let queue = DispatchQueue.global(qos: .userInitiated)
+        
+        // 使用串行隊列保護共享狀態，比 NSLock 更安全且易於理解
+        let resultQueue = DispatchQueue(label: "com.launchpad.scanner.results")
         var allApps: [AppItem] = []
-        let lock = NSLock()
         
         // 並行掃描所有路徑
         for (path, isSystemApp) in scanPaths {
             group.enter()
             queue.async { [weak self] in
                 defer { group.leave() }
-                let apps = self?.scanAppsInDirectory(path, isSystemApp: isSystemApp, recursive: false) ?? []
+                guard let self = self else { return }
+                let apps = self.scanAppsInDirectory(path, isSystemApp: isSystemApp, recursive: false)
                 
-                lock.lock()
-                allApps.append(contentsOf: apps)
-                lock.unlock()
+                // 在專用隊列中安全地添加結果
+                resultQueue.sync {
+                    allApps.append(contentsOf: apps)
+                }
             }
         }
         

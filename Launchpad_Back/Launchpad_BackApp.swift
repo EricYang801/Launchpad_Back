@@ -8,10 +8,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Global Variables for Event Handling
-
-private var gAppDelegate: AppDelegate?
-
 @main
 struct Launchpad_BackApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -35,14 +31,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.info("Application did finish launching")
-        gAppDelegate = self
         registerGlobalHotKey()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
         Logger.info("Application will terminate")
         unregisterGlobalHotKey()
-        gAppDelegate = nil
     }
     
     /// 註冊全局快捷鍵 (Command + L)

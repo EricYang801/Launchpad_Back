@@ -12,11 +12,22 @@ import Combine
 /// 負責頁面導航和分頁邏輯
 class PaginationViewModel: ObservableObject {
     @Published var currentPage = 0
-    @Published var screenSize: CGSize = .zero
+    @Published private(set) var screenSize: CGSize = .zero
     
-    /// 當前布局配置
+    /// 尺寸變化的最小閾值（避免微小變化觸發重算）
+    private let sizeChangeThreshold: CGFloat = 10.0
+    
+    /// 緩存的佈局配置
+    private var cachedLayoutConfig: GridLayoutConfig?
+    
+    /// 當前布局配置（使用緩存提高效能）
     var layoutConfig: GridLayoutConfig {
-        GridLayoutConfig(screenSize: screenSize)
+        if let cached = cachedLayoutConfig {
+            return cached
+        }
+        let config = GridLayoutConfig(screenSize: screenSize)
+        cachedLayoutConfig = config
+        return config
     }
     
     /// 每頁應用數量（根據螢幕大小動態計算）
@@ -24,11 +35,19 @@ class PaginationViewModel: ObservableObject {
         layoutConfig.itemsPerPage
     }
     
-    /// 更新螢幕尺寸
+    /// 更新螢幕尺寸（帶有閾值檢查以避免頻繁更新）
     func updateScreenSize(_ size: CGSize) {
-        if screenSize != size {
-            screenSize = size
+        // 檢查尺寸變化是否超過閾值
+        let widthChange = abs(screenSize.width - size.width)
+        let heightChange = abs(screenSize.height - size.height)
+        
+        guard widthChange > sizeChangeThreshold || heightChange > sizeChangeThreshold else {
+            return
         }
+        
+        screenSize = size
+        cachedLayoutConfig = nil  // 清除緩存，下次訪問時重新計算
+        Logger.debug("Screen size updated to \(size.width)x\(size.height)")
     }
     
     /// 計算總頁數
@@ -85,6 +104,7 @@ class PaginationViewModel: ObservableObject {
     ///   - totalPages: 總頁數
     func jumpToPage(_ page: Int, totalPages: Int) {
         let validPage = max(0, min(page, totalPages - 1))
+        guard validPage != currentPage else { return }  // 避免無意義的更新
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             currentPage = validPage
         }
@@ -92,6 +112,7 @@ class PaginationViewModel: ObservableObject {
     
     /// 重置到第一頁
     func reset() {
+        guard currentPage != 0 else { return }  // 避免無意義的更新
         currentPage = 0
     }
     

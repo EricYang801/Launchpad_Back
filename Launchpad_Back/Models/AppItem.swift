@@ -16,12 +16,36 @@ protocol LaunchpadItem: Identifiable, Hashable {
 
 /// 表示 macOS 應用程式的數據模型
 struct AppItem: LaunchpadItem {
-    let id = UUID()
+    let id: UUID
     let name: String
     let bundleID: String
     let path: String
     let isSystemApp: Bool
     var displayOrder: Int = 0
+    
+    /// 初始化應用程式項目
+    /// - Parameters:
+    ///   - id: 唯一識別碼（默認自動生成，用於持久化時可指定）
+    ///   - name: 應用程式名稱
+    ///   - bundleID: Bundle 識別碼
+    ///   - path: 應用程式路徑
+    ///   - isSystemApp: 是否為系統應用
+    ///   - displayOrder: 顯示順序
+    init(
+        id: UUID = UUID(),
+        name: String,
+        bundleID: String,
+        path: String,
+        isSystemApp: Bool,
+        displayOrder: Int = 0
+    ) {
+        self.id = id
+        self.name = name
+        self.bundleID = bundleID
+        self.path = path
+        self.isSystemApp = isSystemApp
+        self.displayOrder = displayOrder
+    }
     
     /// 獲取應用程式圖示（會使用快取）
     var appIcon: NSImage? {
