@@ -34,13 +34,13 @@ struct GridLayoutManager {
     static let verticalSpacing: CGFloat = 28
     
     /// 頂部邊距（搜索欄下方）
-    static let topPadding: CGFloat = 30
+    static let topPadding: CGFloat = 10
     
     /// 底部邊距（頁面指示器上方）
-    static let bottomPadding: CGFloat = 80
+    static let bottomPadding: CGFloat = 30
     
     /// 左右邊距
-    static let horizontalPadding: CGFloat = 60
+    static let horizontalPadding: CGFloat = 20
     
     // MARK: - 計算屬性
     
