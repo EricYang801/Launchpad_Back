@@ -12,18 +12,31 @@ import Combine
 /// 負責頁面導航和分頁邏輯
 class PaginationViewModel: ObservableObject {
     @Published var currentPage = 0
+    @Published var screenSize: CGSize = .zero
     
-    private let appsPerPage: Int
+    /// 當前布局配置
+    var layoutConfig: GridLayoutConfig {
+        GridLayoutConfig(screenSize: screenSize)
+    }
     
-    init(appsPerPage: Int = 35) {
-        self.appsPerPage = appsPerPage
+    /// 每頁應用數量（根據螢幕大小動態計算）
+    var appsPerPage: Int {
+        layoutConfig.itemsPerPage
+    }
+    
+    /// 更新螢幕尺寸
+    func updateScreenSize(_ size: CGSize) {
+        if screenSize != size {
+            screenSize = size
+        }
     }
     
     /// 計算總頁數
     /// - Parameter itemCount: 項目總數
     /// - Returns: 總頁數
     func totalPages(for itemCount: Int) -> Int {
-        max(1, Int(ceil(Double(itemCount) / Double(appsPerPage))))
+        guard appsPerPage > 0 else { return 1 }
+        return max(1, Int(ceil(Double(itemCount) / Double(appsPerPage))))
     }
     
     /// 獲取指定頁面的應用程式
@@ -39,17 +52,30 @@ class PaginationViewModel: ObservableObject {
         return Array(apps[startIndex..<endIndex])
     }
     
+    /// 獲取指定頁面的項目（支持文件夾）
+    func itemsForPage(_ items: [LaunchpadDisplayItem], page: Int) -> [LaunchpadDisplayItem] {
+        let startIndex = page * appsPerPage
+        let endIndex = min(startIndex + appsPerPage, items.count)
+        
+        guard startIndex < items.count else { return [] }
+        return Array(items[startIndex..<endIndex])
+    }
+    
     /// 上一頁
     func previousPage() {
         if currentPage > 0 {
-            currentPage -= 1
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                currentPage -= 1
+            }
         }
     }
     
     /// 下一頁
     func nextPage(totalPages: Int) {
         if currentPage < totalPages - 1 {
-            currentPage += 1
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                currentPage += 1
+            }
         }
     }
     
@@ -59,11 +85,20 @@ class PaginationViewModel: ObservableObject {
     ///   - totalPages: 總頁數
     func jumpToPage(_ page: Int, totalPages: Int) {
         let validPage = max(0, min(page, totalPages - 1))
-        currentPage = validPage
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            currentPage = validPage
+        }
     }
     
     /// 重置到第一頁
     func reset() {
         currentPage = 0
+    }
+    
+    /// 確保當前頁面有效
+    func validateCurrentPage(totalPages: Int) {
+        if currentPage >= totalPages {
+            currentPage = max(0, totalPages - 1)
+        }
     }
 }

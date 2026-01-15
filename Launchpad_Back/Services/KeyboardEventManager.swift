@@ -77,6 +77,18 @@ class KeyboardEventManager {
             onRightArrow()
             return
         }
+        
+        // Up arrow key - 也可以用來翻頁
+        if event.keyCode == 126 {
+            onLeftArrow()
+            return
+        }
+        
+        // Down arrow key - 也可以用來翻頁
+        if event.keyCode == 125 {
+            onRightArrow()
+            return
+        }
     }
     
     deinit {
