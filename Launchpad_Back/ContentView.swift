@@ -76,7 +76,7 @@ struct LaunchpadView: View {
                 
                 VStack(spacing: 0) {
                     // 頂部間距
-                    Spacer().frame(height: GridLayoutManager.topPadding)
+                    Spacer().frame(height: 10)
                     
                     // 搜尋欄（編輯模式時隱藏）
                     if !editModeManager.isEditing {
@@ -86,7 +86,7 @@ struct LaunchpadView: View {
                                 dragAmount = .zero
                             }
                         
-                        Spacer().frame(height: 30)
+                        Spacer().frame(height: 10)
                     } else {
                         // 編輯模式提示
                         HStack {
@@ -107,9 +107,9 @@ struct LaunchpadView: View {
                             .background(Capsule().fill(.white.opacity(0.2)))
                         }
                         .padding(.horizontal, 40)
-                        .padding(.top, 20)
+                        .padding(.top, 5)
                         
-                        Spacer().frame(height: 30)
+                        Spacer().frame(height: 10)
                     }
                     
                     // 應用程式網格
@@ -194,9 +194,9 @@ struct LaunchpadView: View {
                                 dragAmount = .zero
                             }
                         )
-                        .padding(.bottom, GridLayoutManager.bottomPadding - 40)
+                        .padding(.bottom, 10)
                     } else {
-                        Spacer().frame(height: GridLayoutManager.bottomPadding)
+                        Spacer().frame(height: 10)
                     }
                 }
                 
@@ -709,7 +709,8 @@ struct PageViewEditable: View {
     
     var body: some View {
         VStack {
-            Spacer()
+            // 減少頂部空間，讓 grid 更靠近搜尋欄
+            Spacer().frame(minHeight: 0, maxHeight: 10)
             
             LazyVGrid(columns: layoutConfig.gridColumns, spacing: GridLayoutManager.verticalSpacing) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -732,7 +733,8 @@ struct PageViewEditable: View {
             }
             .frame(width: layoutConfig.gridWidth)
             
-            Spacer()
+            // 減少底部空間
+            Spacer().frame(minHeight: 0, maxHeight: 5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .offset(

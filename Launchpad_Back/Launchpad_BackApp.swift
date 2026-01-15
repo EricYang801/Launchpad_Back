@@ -19,7 +19,7 @@ struct Launchpad_BackApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultSize(width: 1200, height: 900)
+        .defaultSize(width: 1000, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) { }
         }
