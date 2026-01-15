@@ -383,8 +383,12 @@ class LaunchpadViewModel: ObservableObject {
         Logger.info("Added \(app.name) to folder '\(folder.name)'")
     }
     
-    /// 從文件夾中移除應用
-    func removeAppFromFolder(app: AppItem, folder: AppFolder) {
+    /// 從文件夾中移除應用（通用方法，支援多種場景）
+    /// - Parameters:
+    ///   - app: 要移除的應用
+    ///   - folder: 目標文件夾
+    ///   - placement: 移除後的放置方式
+    func removeAppFromFolder(app: AppItem, folder: AppFolder, placement: FolderRemovalPlacement = .updateDisplay) {
         guard let folderIndex = folders.firstIndex(where: { $0.id == folder.id }) else {
             return
         }
@@ -392,42 +396,28 @@ class LaunchpadViewModel: ObservableObject {
         var updatedFolder = folders[folderIndex]
         updatedFolder.apps.removeAll { $0.id == app.id }
         
-        // 如果文件夾只剩一個或沒有應用，刪除文件夾
-        if updatedFolder.apps.count <= 1 {
-            folders.remove(at: folderIndex)
-        } else {
-            folders[folderIndex] = updatedFolder
-        }
-        
-        updateDisplayItems()
-        Logger.info("Removed \(app.name) from folder '\(folder.name)'")
-    }
-    
-    /// 從文件夾中移除應用（不添加到 displayItems，用於浮動拖曳）
-    func removeAppFromFolderOnly(app: AppItem, folder: AppFolder) {
-        guard let folderIndex = folders.firstIndex(where: { $0.id == folder.id }) else {
-            return
-        }
-        
-        var updatedFolder = folders[folderIndex]
-        updatedFolder.apps.removeAll { $0.id == app.id }
-        
-        // 先找到文件夾在 displayItems 中的位置
         let folderDisplayIndex = displayItems.firstIndex {
             if case .folder(let f) = $0 { return f.id == folder.id }
             return false
         }
         
-        // 如果文件夾只剩一個或沒有應用，刪除文件夾並將剩餘 app 放回
+        // 處理文件夾刪除邏輯
         if updatedFolder.apps.count <= 1 {
             let lastApp = updatedFolder.apps.first
             folders.remove(at: folderIndex)
             
             if let idx = folderDisplayIndex {
                 displayItems.remove(at: idx)
-                // 如果有剩餘的 app，放回原位
+                // 如果有剩餘的 app，根據放置方式處理
                 if let lastApp = lastApp {
-                    displayItems.insert(.app(lastApp), at: idx)
+                    switch placement {
+                    case .updateDisplay:
+                        displayItems.insert(.app(lastApp), at: idx)
+                    case .floatingDrag:
+                        displayItems.insert(.app(lastApp), at: idx)
+                    case .appendToEnd:
+                        displayItems.append(.app(lastApp))
+                    }
                 }
             }
         } else {
@@ -437,7 +427,24 @@ class LaunchpadViewModel: ObservableObject {
             }
         }
         
-        Logger.info("Removed \(app.name) from folder '\(folder.name)' (floating drag)")
+        // 根據放置方式處理被移出的應用
+        switch placement {
+        case .updateDisplay:
+            updateDisplayItems()
+        case .floatingDrag:
+            break  // 不做額外處理，讓浮動拖曳邏輯自己決定
+        case .appendToEnd:
+            displayItems.append(.app(app))
+        }
+        
+        Logger.info("Removed \(app.name) from folder '\(folder.name)' with placement: \(placement)")
+    }
+    
+    /// 放置方式枚舉
+    enum FolderRemovalPlacement {
+        case updateDisplay      // 正常移除並更新顯示
+        case floatingDrag       // 浮動拖曳模式（不更新顯示）
+        case appendToEnd        // 移到列表末尾
     }
     
     /// 將應用插入到指定位置
@@ -445,103 +452,6 @@ class LaunchpadViewModel: ObservableObject {
         let safeIndex = min(max(0, index), displayItems.count)
         displayItems.insert(.app(app), at: safeIndex)
         Logger.info("Inserted \(app.name) at index \(safeIndex)")
-    }
-    
-    /// 從文件夾中移除應用並放到列表末尾（用於拖出後排序）
-    func removeAppFromFolderToEnd(app: AppItem, folder: AppFolder) {
-        guard let folderIndex = folders.firstIndex(where: { $0.id == folder.id }) else {
-            return
-        }
-        
-        var updatedFolder = folders[folderIndex]
-        updatedFolder.apps.removeAll { $0.id == app.id }
-        
-        // 先找到文件夾在 displayItems 中的位置
-        let folderDisplayIndex = displayItems.firstIndex {
-            if case .folder(let f) = $0 { return f.id == folder.id }
-            return false
-        }
-        
-        // 如果文件夾只剩一個或沒有應用，刪除文件夾
-        if updatedFolder.apps.count <= 1 {
-            let lastApp = updatedFolder.apps.first
-            folders.remove(at: folderIndex)
-            
-            // 移除 displayItems 中的文件夾
-            if let idx = folderDisplayIndex {
-                displayItems.remove(at: idx)
-            }
-            
-            // 如果有最後一個應用，也要加入
-            if let lastApp = lastApp {
-                displayItems.append(.app(lastApp))
-            }
-        } else {
-            folders[folderIndex] = updatedFolder
-            
-            // 更新 displayItems 中的文件夾
-            if let idx = folderDisplayIndex {
-                displayItems[idx] = .folder(updatedFolder)
-            }
-        }
-        
-        // 將被移出的應用放到末尾
-        displayItems.append(.app(app))
-        
-        Logger.info("Removed \(app.name) from folder '\(folder.name)' to end of list")
-    }
-    
-    /// 從文件夾中移除應用並放置到主畫面指定位置
-    func removeAppFromFolderAndInsert(app: AppItem, folder: AppFolder, atIndex targetIndex: Int) {
-        guard let folderIndex = folders.firstIndex(where: { $0.id == folder.id }) else {
-            return
-        }
-        
-        var updatedFolder = folders[folderIndex]
-        updatedFolder.apps.removeAll { $0.id == app.id }
-        
-        // 先找到文件夾在 displayItems 中的位置
-        let folderDisplayIndex = displayItems.firstIndex {
-            if case .folder(let f) = $0 { return f.id == folder.id }
-            return false
-        }
-        
-        // 如果文件夾只剩一個或沒有應用，刪除文件夾
-        if updatedFolder.apps.count <= 1 {
-            // 取出最後一個應用
-            let lastApp = updatedFolder.apps.first
-            folders.remove(at: folderIndex)
-            
-            // 移除 displayItems 中的文件夾
-            if let idx = folderDisplayIndex {
-                displayItems.remove(at: idx)
-            }
-            
-            // 如果有最後一個應用，也要插入
-            if let lastApp = lastApp {
-                let insertIdx = min(targetIndex, displayItems.count)
-                displayItems.insert(.app(lastApp), at: insertIdx)
-                // 再插入被拖出的應用
-                let nextIdx = min(insertIdx + 1, displayItems.count)
-                displayItems.insert(.app(app), at: nextIdx)
-            } else {
-                let insertIdx = min(targetIndex, displayItems.count)
-                displayItems.insert(.app(app), at: insertIdx)
-            }
-        } else {
-            folders[folderIndex] = updatedFolder
-            
-            // 更新 displayItems 中的文件夾
-            if let idx = folderDisplayIndex {
-                displayItems[idx] = .folder(updatedFolder)
-            }
-            
-            // 插入被移出的應用到指定位置
-            let insertIdx = min(targetIndex, displayItems.count)
-            displayItems.insert(.app(app), at: insertIdx)
-        }
-        
-        Logger.info("Removed \(app.name) from folder '\(folder.name)' and inserted at index \(targetIndex)")
     }
     
     /// 重新排序文件夾內的應用

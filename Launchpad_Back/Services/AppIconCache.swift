@@ -36,30 +36,28 @@ final class AppIconCache {
     func getIcon(for path: String) -> NSImage? {
         let key = path as NSString
         
-        // 檢查快取
+        // 快速路徑：檢查快取（無鎖）
         if let cachedIcon = cache.object(forKey: key) {
             return cachedIcon
         }
         
         lock.lock()
+        defer { lock.unlock() }
         
         // 再次檢查（可能另一個線程已經加載）
         if let cachedIcon = cache.object(forKey: key) {
-            lock.unlock()
             return cachedIcon
         }
         
         // 檢查是否正在載入（防止重複載入）
         if loadingPaths.contains(path) {
-            lock.unlock()
-            // 等待其他執行緒載入完成，然後重試
-            Thread.sleep(forTimeInterval: 0.01)
-            return getIcon(for: path)
+            return nil  // 正在載入中，返回 nil
         }
         
         // 標記為正在載入
         loadingPaths.insert(path)
-        lock.unlock()
+        
+        lock.unlock()  // 解鎖以便其他線程可以進行快速路徑查詢
         
         // 載入圖示（在鎖外執行）
         let originalIcon = NSWorkspace.shared.icon(forFile: path)
@@ -75,7 +73,6 @@ final class AppIconCache {
         
         lock.lock()
         loadingPaths.remove(path)
-        lock.unlock()
         
         return resizedIcon
     }

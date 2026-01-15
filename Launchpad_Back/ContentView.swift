@@ -245,7 +245,7 @@ struct LaunchpadView: View {
                             floatingDragSourceIndex = -1  // 來自文件夾，沒有 grid index
                             
                             // 從文件夾中移除應用（但不插入到 displayItems，等放置時再決定位置）
-                            launchpadVM.removeAppFromFolderOnly(app: app, folder: folder)
+                            launchpadVM.removeAppFromFolder(app: app, folder: folder, placement: .floatingDrag)
                             
                             // 進入編輯模式
                             editModeManager.enterEditMode()
@@ -314,11 +314,6 @@ struct LaunchpadView: View {
     @ViewBuilder
     private func floatingDragOverlay(item: LaunchpadDisplayItem, location: CGPoint, in geometry: GeometryProxy) -> some View {
         ZStack {
-            // 顯示放置指示器（藍色）
-            if dropTargetIndex >= 0 && dropTargetId == nil {
-                screenLocationDropIndicator(at: dropTargetIndex, in: geometry)
-            }
-            
             // 顯示放置指示器（藍色）
             if dropTargetIndex >= 0 && dropTargetId == nil {
                 screenLocationDropIndicator(at: dropTargetIndex, in: geometry)
