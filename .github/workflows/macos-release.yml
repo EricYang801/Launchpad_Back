@@ -1,0 +1,38 @@
+name: Build and Release macOS App
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build App
+        run: |
+          xcodebuild \
+            -project Launchpad_Back.xcodeproj \
+            -scheme Launchpad_Back \
+            -configuration Release \
+            -destination "platform=macOS" build
+
+      - name: Zip App
+        run: |
+          cd build/Release
+          zip -r Launchpad_Back-macOS.zip Launchpad_Back.app
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: build/Release/Launchpad_Back-macOS.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
