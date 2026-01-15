@@ -27,15 +27,25 @@ jobs:
             MACOSX_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGNING_ALLOWED=NO build
 
+      - name: Find built app
+        id: find_app
+        run: |
+          APP_PATH=$(find build -name "Launchpad_Back.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ Error: Launchpad_Back.app not found!"
+            exit 1
+          fi
+          echo "Found app at $APP_PATH"
+          echo "APP_PATH=$APP_PATH" >> $GITHUB_ENV
+
       - name: Zip App
         run: |
-          cd build/Build/Products/Release-macOS
-          zip -r Launchpad_Back-macOS.zip Launchpad_Back.app
+          zip -r Launchpad_Back-macOS.zip "$APP_PATH"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: build/Build/Products/Release-macOS/Launchpad_Back-macOS.zip
+          files: Launchpad_Back-macOS.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
