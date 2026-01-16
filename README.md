@@ -2,6 +2,10 @@
 
 > A macOS application developed with SwiftUI, designed to mimic the native macOS Launchpad functionality
 
+<div align="center">
+  <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="下載次數" />
+</div>
+
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
 
 ## Demo
