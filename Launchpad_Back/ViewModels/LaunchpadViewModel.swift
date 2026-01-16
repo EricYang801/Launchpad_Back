@@ -3,6 +3,7 @@
 //  Launchpad_Back
 //
 //  Created by Eric Yang on 2025/1/14.
+//  Optimized for memory usage on 2025/1/16
 //
 
 import SwiftUI
@@ -10,12 +11,18 @@ import Combine
 
 /// 主要的 Launchpad ViewModel
 /// 負責應用程式列表的管理和狀態
+/// 
+/// 記憶體優化：
+/// - 使用防抖動機制減少頻繁的 UserDefaults 寫入
+/// - 優化 @Published 屬性使用
+/// - 改善記憶體釋放邏輯
 class LaunchpadViewModel: ObservableObject {
     @Published var apps: [AppItem] = []
     @Published var folders: [AppFolder] = []
     @Published var displayItems: [LaunchpadDisplayItem] = [] {
         didSet {
-            saveOrder()
+            // 使用防抖動，避免頻繁保存
+            scheduleSave()
         }
     }
     @Published var isLoading = false
@@ -29,16 +36,27 @@ class LaunchpadViewModel: ObservableObject {
     private let orderKey = "launchpad_item_order"
     private let foldersKey = "launchpad_folders"
     
+    // 優化：防抖動計時器，減少頻繁的 UserDefaults 寫入
+    private var saveOrderWorkItem: DispatchWorkItem?
+    private let saveDebounceInterval: TimeInterval = 0.5
+    
+    // 優化：快取當前頁面信息，用於圖標快取管理
+    private var currentPage: Int = 0
+    private let itemsPerPage: Int = 35
+    
     init(
         scannerService: AppScannerService = AppScannerService(),
         launcherService: AppLauncherService = AppLauncherService()
     ) {
         self.scannerService = scannerService
         self.launcherService = launcherService
-        Logger.info("LaunchpadViewModel initialized")
+        Logger.info("LaunchpadViewModel initialized with memory optimizations")
     }
     
     deinit {
+        // 確保保存待處理的更改
+        saveOrderWorkItem?.cancel()
+        saveOrderImmediately()
         Logger.debug("LaunchpadViewModel deinitialized")
     }
     
@@ -59,6 +77,9 @@ class LaunchpadViewModel: ObservableObject {
                     self?.initializeDisplayItems()
                     self?.isLoading = false
                     Logger.info("App loading completed. Found \(apps.count) applications")
+                    
+                    // 優化：更新圖標快取的活躍頁面
+                    self?.updateIconCacheActivePage()
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -91,8 +112,7 @@ class LaunchpadViewModel: ObservableObject {
             }
         }
         
-        // 保存更新
-        saveOrder()
+        // 注意：這裡不直接調用 saveOrder()，因為 didSet 會觸發防抖動保存
     }
     
     /// 初始化顯示項目列表（首次載入時按名稱排序，或從保存的順序載入）
@@ -154,10 +174,22 @@ class LaunchpadViewModel: ObservableObject {
         }
     }
     
-    // MARK: - 持久化
+    // MARK: - 持久化（優化版）
     
-    /// 保存當前順序
-    private func saveOrder() {
+    /// 排程保存（使用防抖動）
+    private func scheduleSave() {
+        saveOrderWorkItem?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveOrderImmediately()
+        }
+        
+        saveOrderWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + saveDebounceInterval, execute: workItem)
+    }
+    
+    /// 立即保存當前順序（內部方法）
+    private func saveOrderImmediately() {
         // 使用 bundleID（對於應用）或 folder ID（對於文件夾）來保存順序
         let order = displayItems.map { item -> String in
             switch item {
@@ -167,10 +199,19 @@ class LaunchpadViewModel: ObservableObject {
                 return "folder:\(folder.id.uuidString)"
             }
         }
-        UserDefaults.standard.set(order, forKey: orderKey)
-        UserDefaults.standard.synchronize()  // 強制立即寫入
-        saveFolders()
-        Logger.info("Saved order with \(order.count) items and \(folders.count) folders")
+        
+        // 優化：批次寫入，減少 I/O 操作
+        let defaults = UserDefaults.standard
+        defaults.set(order, forKey: orderKey)
+        saveFolders(to: defaults)
+        defaults.synchronize()  // 強制立即寫入
+        
+        Logger.debug("Saved order with \(order.count) items and \(folders.count) folders")
+    }
+    
+    /// 保存當前順序（公開方法，用於需要立即保存的場景）
+    func saveOrder() {
+        saveOrderImmediately()
     }
     
     /// 載入保存的順序
@@ -178,8 +219,9 @@ class LaunchpadViewModel: ObservableObject {
         return UserDefaults.standard.stringArray(forKey: orderKey)
     }
     
-    /// 保存文件夾
-    private func saveFolders() {
+    /// 保存文件夾（優化：接受 UserDefaults 參數，避免重複獲取）
+    private func saveFolders(to defaults: UserDefaults? = nil) {
+        let defaults = defaults ?? UserDefaults.standard
         let folderData = folders.map { folder -> [String: Any] in
             return [
                 "id": folder.id.uuidString,
@@ -187,7 +229,7 @@ class LaunchpadViewModel: ObservableObject {
                 "appBundleIds": folder.apps.map { $0.bundleID }  // 使用 bundleID
             ]
         }
-        UserDefaults.standard.set(folderData, forKey: foldersKey)
+        defaults.set(folderData, forKey: foldersKey)
     }
     
     /// 載入文件夾
@@ -227,6 +269,40 @@ class LaunchpadViewModel: ObservableObject {
         
         Logger.info("Loaded \(folders.count) folders")
     }
+    
+    // MARK: - 圖標快取優化
+    
+    /// 更新圖標快取的活躍頁面
+    /// - Parameter page: 當前頁面索引
+    func updateActivePage(_ page: Int) {
+        currentPage = page
+        updateIconCacheActivePage()
+        
+        // 預載入相鄰頁面的圖標
+        preloadAdjacentPageIcons(page)
+    }
+    
+    /// 更新圖標快取管理器的活躍頁面信息
+    private func updateIconCacheActivePage() {
+        AppIconCache.shared.updateActivePage(currentPage, itemsPerPage: itemsPerPage)
+    }
+    
+    /// 預載入相鄰頁面的圖標
+    private func preloadAdjacentPageIcons(_ page: Int) {
+        let startIndex = max(0, (page - 1) * itemsPerPage)
+        let endIndex = min(displayItems.count, (page + 2) * itemsPerPage)
+        
+        let paths = displayItems[startIndex..<endIndex].compactMap { item -> String? in
+            if case .app(let app) = item {
+                return app.path
+            }
+            return nil
+        }
+        
+        AppIconCache.shared.preloadIcons(for: paths)
+    }
+    
+    // MARK: - 應用程式操作
     
     /// 啟動應用程式
     /// - Parameter app: 要啟動的應用程式
