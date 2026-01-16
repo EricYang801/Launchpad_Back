@@ -2,6 +2,10 @@
 
 > 一個使用 SwiftUI 開發的 macOS 應用程式，用於模仿原生macOS啟動台功能
 
+<div align="center">
+  <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="下載次數" />
+</div>
+
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
 
 ## 畫面演示
