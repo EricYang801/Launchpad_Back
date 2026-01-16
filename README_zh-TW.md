@@ -255,7 +255,7 @@ struct AppFolder: LaunchpadItem {
 
 ## 授權
 
-本專案採用 MIT 授權協議。詳見 [LICENSE](./LICENSE) 檔案。
+本專案採用 GPL-3.0 授權協議。詳見 [LICENSE](./LICENSE) 檔案。
 
 ## 作者
 
