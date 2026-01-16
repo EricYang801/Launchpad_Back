@@ -48,6 +48,7 @@ struct AppItem: LaunchpadItem {
     }
     
     /// 獲取應用程式圖示（會使用快取）
+    /// 優化：每次調用都是按需獲取，不在模型中儲存圖標以節省記憶體
     var appIcon: NSImage? {
         AppIconCache.shared.getIcon(for: path)
     }
@@ -82,8 +83,12 @@ struct AppFolder: LaunchpadItem {
     }
     
     /// 獲取文件夾預覽圖示（最多顯示 9 個應用圖示）
+    /// 優化：改為計算屬性，不快取結果，減少記憶體佔用
+    /// 每次訪問時按需從快取獲取，而不是在 AppFolder 中保存引用
     var previewIcons: [NSImage?] {
-        Array(apps.prefix(9)).map { $0.appIcon }
+        Array(apps.prefix(9)).map { app in
+            AppIconCache.shared.getIcon(for: app.path)
+        }
     }
     
     func hash(into hasher: inout Hasher) {
