@@ -20,6 +20,28 @@ struct Launchpad_BackApp: App {
     }
 }
 
+final class LaunchpadWindow: NSWindow {
+    var onCloseRequested: (() -> Void)?
+
+    override func performClose(_ sender: Any?) {
+        if let onCloseRequested {
+            onCloseRequested()
+            return
+        }
+
+        super.performClose(sender)
+    }
+
+    override func close() {
+        if let onCloseRequested {
+            onCloseRequested()
+            return
+        }
+
+        super.close()
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let defaultWindowSize = NSSize(width: 1000, height: 700)
     private var globalHotKeyRef: EventHotKeyRef?
@@ -50,7 +72,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        clampedFrameSize(for: sender, proposedSize: frameSize)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === mainWindow else {
+            return
+        }
+
+        let clampedSize = clampedFrameSize(for: window, proposedSize: window.frame.size)
+        guard window.frame.size != clampedSize else {
+            return
+        }
+
+        let adjustedOrigin = NSPoint(
+            x: window.frame.maxX - clampedSize.width,
+            y: window.frame.origin.y
+        )
+        window.setFrame(NSRect(origin: adjustedOrigin, size: clampedSize), display: true)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -75,13 +119,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func closeMainWindow() {
-        guard let window = mainWindow else {
+        guard mainWindow != nil else {
             Logger.warning("No main window found")
-            NSApp.terminate(nil)
             return
         }
 
-        window.performClose(nil)
+        hideMainWindow()
     }
     
     func showMainWindow() {
@@ -131,9 +174,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .preferredColorScheme(.dark)
         
         let hostingController = NSHostingController(rootView: rootView)
-        let window = NSWindow(
+        let window = LaunchpadWindow(
             contentRect: NSRect(origin: .zero, size: defaultWindowSize),
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -141,11 +184,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentViewController = hostingController
         window.setContentSize(defaultWindowSize)
         window.setFrame(NSRect(origin: .zero, size: defaultWindowSize), display: false)
-        window.minSize = NSSize(width: 800, height: 560)
+        window.contentMinSize = GridLayoutManager.minimumWindowContentSize
+        window.minSize = minimumWindowFrameSize(for: window)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
         window.isRestorable = false
+        window.onCloseRequested = { [weak self] in
+            self?.hideMainWindow()
+        }
         window.delegate = self
         window.center()
         
@@ -257,11 +304,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.level = .floating
         
-        if window.frame.width < 800 || window.frame.height < 560 {
+        if window.contentLayoutRect.width < GridLayoutManager.minimumWindowContentSize.width ||
+            window.contentLayoutRect.height < GridLayoutManager.minimumWindowContentSize.height {
             window.setContentSize(defaultWindowSize)
-            window.setFrame(NSRect(origin: window.frame.origin, size: defaultWindowSize), display: false)
             Logger.info("Corrected zero-sized window frame")
         }
+    }
+
+    private func minimumWindowFrameSize(for window: NSWindow) -> NSSize {
+        let frameSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: GridLayoutManager.minimumWindowContentSize)).size
+        return NSSize(width: ceil(frameSize.width), height: ceil(frameSize.height))
+    }
+
+    private func clampedFrameSize(for window: NSWindow, proposedSize: NSSize) -> NSSize {
+        let minimumFrameSize = minimumWindowFrameSize(for: window)
+        return NSSize(
+            width: max(proposedSize.width, minimumFrameSize.width),
+            height: max(proposedSize.height, minimumFrameSize.height)
+        )
     }
     
     private func ensureWindowIsOnScreen(_ window: NSWindow) {
