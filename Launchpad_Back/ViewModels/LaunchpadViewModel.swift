@@ -10,7 +10,7 @@ import SwiftUI
 import Combine
 
 private struct SearchIndexEntry {
-    let app: AppItem
+    let stableIdentifier: String
     let searchText: String
 }
 
@@ -38,6 +38,15 @@ final class LaunchpadViewModel: ObservableObject {
     private let launcherService: AppLauncherService
     private let defaults: UserDefaults
     private var searchIndex: [SearchIndexEntry] = []
+    private var appsByStableIdentifier: [String: AppItem] = [:]
+    private var appsByBundleIdentifier: [String: AppItem] = [:]
+    private var searchRevision = 0
+    private var cachedFilteredAppsQuery: String?
+    private var cachedFilteredAppsRevision = -1
+    private var cachedFilteredAppsResult: [AppItem] = []
+    private var cachedFilteredDisplayItemsQuery: String?
+    private var cachedFilteredDisplayItemsRevision = -1
+    private var cachedFilteredDisplayItemsResult: [LaunchpadDisplayItem] = []
     
     // 持久化存儲鍵
     private let orderKey = "launchpad_item_order"
@@ -46,10 +55,6 @@ final class LaunchpadViewModel: ObservableObject {
     // 優化：防抖動計時器，減少頻繁的 UserDefaults 寫入
     private var saveOrderWorkItem: DispatchWorkItem?
     private let saveDebounceInterval: TimeInterval = 0.5
-    
-    // 優化：快取當前頁面信息，用於圖標快取管理
-    private var currentPage: Int = 0
-    private var itemsPerPage: Int = 35
     
     init(
         scannerService: AppScannerService = AppScannerService(),
@@ -78,19 +83,20 @@ final class LaunchpadViewModel: ObservableObject {
         Logger.info("Starting app loading...")
         
         DispatchQueue.global(qos: .background).async { [weak self] in
-            let apps = self?.scannerService.scanInstalledApps() ?? []
+            guard let self else { return }
+            let apps = self.scannerService.scanInstalledApps()
+            let searchState = self.buildSearchState(from: apps)
             
             DispatchQueue.main.async {
-                let searchState = self?.buildSearchState(from: apps)
-                self?.apps = apps
-                self?.searchableApps = searchState?.apps ?? []
-                self?.searchIndex = searchState?.index ?? []
-                self?.initializeDisplayItems()
-                self?.isLoading = false
+                self.apps = apps
+                self.searchableApps = searchState.apps
+                self.appsByStableIdentifier = searchState.appsByStableIdentifier
+                self.appsByBundleIdentifier = searchState.appsByBundleIdentifier
+                self.searchIndex = searchState.index
+                self.invalidateSearchCaches()
+                self.initializeDisplayItems()
+                self.isLoading = false
                 Logger.info("App loading completed. Found \(apps.count) applications")
-                
-                // 優化：更新圖標快取的活躍頁面
-                self?.updateIconCacheActivePage()
             }
         }
     }
@@ -275,9 +281,7 @@ final class LaunchpadViewModel: ObservableObject {
             if let identifiers = data["appIdentifiers"] as? [String] {
                 folderApps = identifiers.compactMap(app(withIdentifier:))
             } else if let bundleIds = data["appBundleIds"] as? [String] {
-                folderApps = bundleIds.compactMap { bundleId -> AppItem? in
-                    apps.first { $0.bundleID == bundleId }
-                }
+                folderApps = bundleIds.compactMap(app(withBundleIdentifier:))
             } else if let appIds = data["appIds"] as? [String] {
                 folderApps = appIds.compactMap { appIdString -> AppItem? in
                     guard let appId = UUID(uuidString: appIdString) else { return nil }
@@ -295,25 +299,15 @@ final class LaunchpadViewModel: ObservableObject {
         Logger.info("Loaded \(folders.count) folders")
     }
     
-    // MARK: - 圖標快取優化
+    // MARK: - 圖標預載入
     
-    /// 更新圖標快取的活躍頁面
+    /// 根據目前頁面預載入相鄰頁的圖標，降低翻頁時的載入延遲。
     func updateActivePage(_ page: Int, itemsPerPage: Int) {
-        currentPage = page
-        self.itemsPerPage = max(1, itemsPerPage)
-        updateIconCacheActivePage()
-        
-        // 預載入相鄰頁面的圖標
-        preloadAdjacentPageIcons(page)
-    }
-    
-    /// 更新圖標快取管理器的活躍頁面信息
-    private func updateIconCacheActivePage() {
-        AppIconCache.shared.updateActivePage(currentPage, itemsPerPage: itemsPerPage)
+        preloadAdjacentPageIcons(page, itemsPerPage: max(1, itemsPerPage))
     }
     
     /// 預載入相鄰頁面的圖標
-    private func preloadAdjacentPageIcons(_ page: Int) {
+    private func preloadAdjacentPageIcons(_ page: Int, itemsPerPage: Int) {
         guard !displayItems.isEmpty else { return }
         
         let startIndex = max(0, (page - 1) * itemsPerPage)
@@ -330,24 +324,46 @@ final class LaunchpadViewModel: ObservableObject {
         AppIconCache.shared.preloadIcons(for: requests)
     }
 
-    private func buildSearchState(from apps: [AppItem]) -> (apps: [AppItem], index: [SearchIndexEntry]) {
+    private func buildSearchState(from apps: [AppItem]) -> (
+        apps: [AppItem],
+        index: [SearchIndexEntry],
+        appsByStableIdentifier: [String: AppItem],
+        appsByBundleIdentifier: [String: AppItem]
+    ) {
         let searchableApps = Dictionary(grouping: apps, by: \.stableIdentifier)
             .compactMapValues(\.first)
             .values
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let appsByStableIdentifier = Dictionary(uniqueKeysWithValues: searchableApps.map { ($0.stableIdentifier, $0) })
+        let appsByBundleIdentifier = Dictionary(grouping: searchableApps.filter { !$0.bundleID.isEmpty }, by: \.bundleID)
+            .compactMapValues(\.first)
 
         let index = searchableApps.map { app in
             SearchIndexEntry(
-                app: app,
+                stableIdentifier: app.stableIdentifier,
                 searchText: "\(app.name)\n\(app.bundleID)\n\(app.path)".lowercased()
             )
         }
 
-        return (searchableApps, index)
+        return (searchableApps, index, appsByStableIdentifier, appsByBundleIdentifier)
     }
     
     private func app(withIdentifier identifier: String) -> AppItem? {
-        apps.first { $0.stableIdentifier == identifier }
+        appsByStableIdentifier[identifier]
+    }
+
+    private func app(withBundleIdentifier bundleIdentifier: String) -> AppItem? {
+        appsByBundleIdentifier[bundleIdentifier]
+    }
+
+    private func invalidateSearchCaches() {
+        searchRevision &+= 1
+        cachedFilteredAppsQuery = nil
+        cachedFilteredAppsRevision = -1
+        cachedFilteredAppsResult = []
+        cachedFilteredDisplayItemsQuery = nil
+        cachedFilteredDisplayItemsRevision = -1
+        cachedFilteredDisplayItemsResult = []
     }
     
     func filteredApps(matching searchText: String) -> [AppItem] {
@@ -355,19 +371,35 @@ final class LaunchpadViewModel: ObservableObject {
         guard !query.isEmpty else {
             return searchableApps
         }
+
+        if cachedFilteredAppsQuery == query, cachedFilteredAppsRevision == searchRevision {
+            return cachedFilteredAppsResult
+        }
         
-        return searchIndex
+        let result = searchIndex
             .filter { $0.searchText.contains(query) }
-            .map(\.app)
+            .compactMap { appsByStableIdentifier[$0.stableIdentifier] }
+        cachedFilteredAppsQuery = query
+        cachedFilteredAppsRevision = searchRevision
+        cachedFilteredAppsResult = result
+        return result
     }
     
     func filteredDisplayItems(matching searchText: String) -> [LaunchpadDisplayItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else {
             return displayItems
         }
+
+        if cachedFilteredDisplayItemsQuery == query, cachedFilteredDisplayItemsRevision == searchRevision {
+            return cachedFilteredDisplayItemsResult
+        }
         
-        return filteredApps(matching: query).map(LaunchpadDisplayItem.app)
+        let result = filteredApps(matching: query).map(LaunchpadDisplayItem.app)
+        cachedFilteredDisplayItemsQuery = query
+        cachedFilteredDisplayItemsRevision = searchRevision
+        cachedFilteredDisplayItemsResult = result
+        return result
     }
     
     // MARK: - 應用程式操作

@@ -120,8 +120,8 @@ final class AppIconResolverTests: XCTestCase {
         let canonicalIcon = try XCTUnwrap(cache.getIcon(for: actualAppURL.path, appName: "Cached Alias"))
         
         XCTAssertEqual(workspace.requestedPaths, [symlinkURL.path, actualAppURL.path])
-        XCTAssertNotNil(cache.cachedIcon(for: symlinkURL.path, appName: "Cached Alias"))
-        XCTAssertNotNil(cache.cachedIcon(for: actualAppURL.path, appName: "Cached Alias"))
+        XCTAssertNotNil(cache.cachedIcon(for: symlinkURL.path))
+        XCTAssertNotNil(cache.cachedIcon(for: actualAppURL.path))
         XCTAssertEqual(imageFingerprint(for: symlinkIcon), imageFingerprint(for: canonicalIcon))
     }
 
