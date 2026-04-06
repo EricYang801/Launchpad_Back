@@ -84,17 +84,17 @@ struct LaunchpadView: View {
                 
                 VStack(spacing: 0) {
                     // 頂部間距
-                    Spacer().frame(height: 10)
+                    Spacer().frame(height: 6)
                     
                     // 搜尋欄（編輯模式時隱藏）
                     if !editModeManager.isEditing {
                         normalHeaderView
                         
-                        Spacer().frame(height: 10)
+                        Spacer().frame(height: 4)
                     } else {
                         editingHeaderView
                         
-                        Spacer().frame(height: 10)
+                        Spacer().frame(height: 4)
                     }
                     
                     // 應用程式網格
@@ -168,9 +168,9 @@ struct LaunchpadView: View {
                                 dragAmount = .zero
                             }
                         )
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 6)
                     } else {
-                        Spacer().frame(height: 10)
+                        Spacer().frame(height: 6)
                     }
                 }
                 
@@ -381,8 +381,8 @@ struct LaunchpadView: View {
 
     private func currentGridLayout(in geometry: GeometryProxy) -> GridScreenLayout {
         let layoutConfig = paginationVM.layoutConfig
-        let topAreaHeight: CGFloat = 80
-        let bottomAreaHeight: CGFloat = 60
+        let topAreaHeight = GridLayoutManager.headerAreaHeight
+        let bottomAreaHeight = GridLayoutManager.footerAreaHeight
         let availableHeight = geometry.size.height - topAreaHeight - bottomAreaHeight
         let origin = CGPoint(
             x: (geometry.size.width - layoutConfig.gridWidth) / 2,

@@ -11,6 +11,12 @@ import SwiftUI
 /// 負責計算 Launchpad 的網格布局參數
 struct GridLayoutManager {
     // MARK: - 布局常數（類似原版 Launchpad）
+    static let minimumColumns = 5
+    static let maximumColumns = 9
+    static let minimumRows = 3
+    static let maximumRows = 7
+    static let minimumWindowColumns = 6
+    static let minimumWindowRows = 4
     
     /// 圖示大小
     static let iconSize: CGFloat = 80
@@ -33,11 +39,11 @@ struct GridLayoutManager {
     /// 垂直間距
     static let verticalSpacing: CGFloat = 28
     
-    /// 頂部邊距（搜索欄下方）
-    static let topPadding: CGFloat = 10
+    /// 頂部保留區（搜尋列與上方留白）
+    static let headerAreaHeight: CGFloat = 64
     
-    /// 底部邊距（頁面指示器上方）
-    static let bottomPadding: CGFloat = 30
+    /// 底部保留區（頁面指示器與下方留白）
+    static let footerAreaHeight: CGFloat = 44
     
     /// 左右邊距
     static let horizontalPadding: CGFloat = 20
@@ -51,17 +57,17 @@ struct GridLayoutManager {
         let availableWidth = screenWidth - (horizontalPadding * 2)
         let itemTotalWidth = itemWidth + horizontalSpacing
         let cols = Int(availableWidth / itemTotalWidth)
-        return max(5, min(cols, 9)) // 限制在 5-9 列之間
+        return max(minimumColumns, min(cols, maximumColumns))
     }
     
     /// 計算每頁的行數
     /// - Parameter screenHeight: 螢幕高度
     /// - Returns: 行數
     static func rows(for screenHeight: CGFloat) -> Int {
-        let availableHeight = screenHeight - topPadding - bottomPadding - 80 // 80 for search bar area
+        let availableHeight = screenHeight - headerAreaHeight - footerAreaHeight
         let itemTotalHeight = itemHeight + verticalSpacing
         let rows = Int(availableHeight / itemTotalHeight)
-        return max(3, min(rows, 7)) // 限制在 3-7 行之間
+        return max(minimumRows, min(rows, maximumRows))
     }
     
     /// 計算每頁的應用數量
@@ -92,6 +98,17 @@ struct GridLayoutManager {
     /// - Returns: 網格高度
     static func gridHeight(rowCount: Int) -> CGFloat {
         CGFloat(rowCount) * itemHeight + CGFloat(rowCount - 1) * verticalSpacing
+    }
+
+    static func contentSize(columnCount: Int, rowCount: Int) -> CGSize {
+        CGSize(
+            width: gridWidth(columnCount: columnCount) + (horizontalPadding * 2),
+            height: gridHeight(rowCount: rowCount) + headerAreaHeight + footerAreaHeight
+        )
+    }
+
+    static var minimumWindowContentSize: CGSize {
+        contentSize(columnCount: minimumWindowColumns, rowCount: minimumWindowRows)
     }
 }
 
