@@ -134,26 +134,57 @@ final class AppIconResolverTests: XCTestCase {
             iconsByPath: [appURL.path: customIcon]
         )
         let resolver = AppIconResolver(fileManager: .default, workspace: workspace)
-        let group = DispatchGroup()
+        let iterationCount = 12
+        let completionExpectation = expectation(description: "concurrent icon resolution completes")
+        completionExpectation.expectedFulfillmentCount = iterationCount
         let resultsLock = NSLock()
         var results: [Bool] = []
-        let iterationCount = 24
         
         for _ in 0..<iterationCount {
-            group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 let resolution = resolver.resolveIcon(for: appURL.path, appName: "Concurrent Icon")
                 let isGeneric = resolver.isGenericAppIcon(resolution.image)
                 resultsLock.lock()
                 results.append(isGeneric)
                 resultsLock.unlock()
-                group.leave()
+                completionExpectation.fulfill()
             }
         }
         
-        XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+        wait(for: [completionExpectation], timeout: 15)
         XCTAssertEqual(results.count, iterationCount)
         XCTAssertTrue(results.allSatisfy { $0 == false })
+    }
+
+    func testGetIconAsync_DeliversResultToRequestsThatJoinInFlightLoad() throws {
+        let appURL = try makeAppBundle(named: "AsyncJoinedIcon")
+        let genericIcon = makeImage(color: .darkGray)
+        let customIcon = makeImage(color: .systemYellow)
+        let workspace = DelayedIconWorkspace(
+            genericIcon: genericIcon,
+            iconsByPath: [appURL.path: customIcon],
+            delay: 0.15
+        )
+        let resolver = AppIconResolver(fileManager: .default, workspace: workspace)
+        let cache = AppIconCache(resolver: resolver)
+        let firstExpectation = expectation(description: "first async icon callback")
+        let secondExpectation = expectation(description: "second async icon callback")
+        var fingerprints: [Data?] = [nil, nil]
+
+        cache.getIconAsync(for: appURL.path, appName: "Async Joined Icon") { icon in
+            fingerprints[0] = icon.flatMap { self.imageFingerprint(for: $0) }
+            firstExpectation.fulfill()
+        }
+        cache.getIconAsync(for: appURL.path, appName: "Async Joined Icon") { icon in
+            fingerprints[1] = icon.flatMap { self.imageFingerprint(for: $0) }
+            secondExpectation.fulfill()
+        }
+
+        wait(for: [firstExpectation, secondExpectation], timeout: 5)
+
+        XCTAssertNotNil(fingerprints[0])
+        XCTAssertEqual(fingerprints[0], fingerprints[1])
+        XCTAssertEqual(workspace.requestedPaths, [appURL.path])
     }
     
     private func makeAppBundle(
@@ -261,6 +292,34 @@ private final class MockIconWorkspace: AppIconWorkspaceProviding {
         return icon
     }
     
+    func genericApplicationIcon() -> NSImage {
+        genericIconImage
+    }
+}
+
+private final class DelayedIconWorkspace: AppIconWorkspaceProviding {
+    private let genericIconImage: NSImage
+    private let iconsByPath: [String: NSImage]
+    private let delay: TimeInterval
+    private let lock = NSLock()
+
+    private(set) var requestedPaths: [String] = []
+
+    init(genericIcon: NSImage, iconsByPath: [String: NSImage] = [:], delay: TimeInterval) {
+        self.genericIconImage = genericIcon
+        self.iconsByPath = iconsByPath
+        self.delay = delay
+    }
+
+    func icon(forFile path: String) -> NSImage {
+        Thread.sleep(forTimeInterval: delay)
+        lock.lock()
+        requestedPaths.append(path)
+        let icon = iconsByPath[path] ?? genericIconImage
+        lock.unlock()
+        return icon
+    }
+
     func genericApplicationIcon() -> NSImage {
         genericIconImage
     }

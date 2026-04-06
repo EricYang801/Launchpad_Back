@@ -17,12 +17,14 @@ import AppKit
 /// - 監聽系統記憶體警告，自動清理快取
 final class AppIconCache: NSObject {
     static let shared = AppIconCache()
+    private typealias IconCompletion = (NSImage?) -> Void
     
     /// 圖示快取（使用 NSCache 自動管理記憶體）
     private let cache = NSCache<NSString, NSImage>()
     
     /// 正在載入的路徑集合（防止重複載入）
     private var loadingPaths: Set<String> = []
+    private var pendingCompletions: [String: [IconCompletion]] = [:]
     
     /// 訪問保護鎖
     private let lock = NSLock()
@@ -135,36 +137,15 @@ final class AppIconCache: NSObject {
             return cachedIcon
         }
         
-        // 檢查是否正在載入（防止重複載入）
-        if loadingPaths.contains(keyString) {
+        if !beginLoadingIfNeeded(for: keyString) {
             lock.unlock()
-            return nil  // 正在載入中，返回 nil
+            return nil
         }
-        
-        // 標記為正在載入
-        loadingPaths.insert(keyString)
-        
-        lock.unlock()  // 解鎖以便其他線程可以進行快速路徑查詢
-        
-        // 載入圖示（在鎖外執行，使用 autoreleasepool）
-        let resolvedIcon: NSImage = autoreleasepool {
-            resolver.resolveIcon(for: path, appName: appName, targetSize: targetIconSize).image
-        }
-        let resizedIcon: NSImage = autoreleasepool {
-            resizeIcon(resolvedIcon, to: targetIconSize)
-        }
-        
-        // 估算圖標大小用於 NSCache 成本
-        let estimatedCost = Int(targetIconSize * targetIconSize * 4)
-        
-        // 寫入快取
-        cache.setObject(resizedIcon, forKey: key, cost: estimatedCost)
-        
-        lock.lock()
-        loadingPaths.remove(keyString)
         lock.unlock()
         
-        return resizedIcon
+        let loadedIcon = loadAndCacheIcon(for: path, appName: appName, key: key)
+        completeLoad(for: keyString, icon: loadedIcon)
+        return loadedIcon
     }
     
     /// 縮小圖標尺寸（優化版本）
@@ -219,12 +200,30 @@ final class AppIconCache: NSObject {
             completion(cachedIcon)
             return
         }
+
+        let keyString = resolver.cacheKey(for: path)
+        let key = keyString as NSString
+        var shouldStartLoading = false
+
+        lock.lock()
+        if let cachedIcon = cache.object(forKey: key) {
+            lock.unlock()
+            completion(cachedIcon)
+            return
+        }
+
+        pendingCompletions[keyString, default: []].append(completion)
+        shouldStartLoading = beginLoadingIfNeeded(for: keyString)
+        lock.unlock()
+
+        guard shouldStartLoading else {
+            return
+        }
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let icon = self?.getIcon(for: path, appName: appName)
-            DispatchQueue.main.async {
-                completion(icon)
-            }
+            guard let self else { return }
+            let icon = self.loadAndCacheIcon(for: path, appName: appName, key: key)
+            self.completeLoad(for: keyString, icon: icon)
         }
     }
     
@@ -249,6 +248,7 @@ final class AppIconCache: NSObject {
         cache.removeAllObjects()
         lock.lock()
         loadingPaths.removeAll()
+        pendingCompletions.removeAll()
         lock.unlock()
         Logger.debug("AppIconCache cleared completely")
     }
@@ -284,6 +284,45 @@ final class AppIconCache: NSObject {
         }
         
         return DispatchQueue.main.sync(execute: work)
+    }
+
+    private func beginLoadingIfNeeded(for keyString: String) -> Bool {
+        guard !loadingPaths.contains(keyString) else {
+            return false
+        }
+
+        loadingPaths.insert(keyString)
+        return true
+    }
+
+    private func loadAndCacheIcon(for path: String, appName: String?, key: NSString) -> NSImage {
+        let resolvedIcon: NSImage = autoreleasepool {
+            resolver.resolveIcon(for: path, appName: appName, targetSize: targetIconSize).image
+        }
+        let resizedIcon: NSImage = autoreleasepool {
+            resizeIcon(resolvedIcon, to: targetIconSize)
+        }
+
+        let estimatedCost = Int(targetIconSize * targetIconSize * 4)
+        cache.setObject(resizedIcon, forKey: key, cost: estimatedCost)
+        return resizedIcon
+    }
+
+    private func completeLoad(for keyString: String, icon: NSImage?) {
+        lock.lock()
+        loadingPaths.remove(keyString)
+        let completions = pendingCompletions.removeValue(forKey: keyString) ?? []
+        lock.unlock()
+
+        guard !completions.isEmpty else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            completions.forEach { completion in
+                completion(icon)
+            }
+        }
     }
 }
 
