@@ -1,9 +1,9 @@
 # Launchpad_Back
 
-> A macOS application developed with SwiftUI, designed to mimic the native macOS Launchpad functionality
+> A SwiftUI-based replacement for Launchpad on modern macOS.
 
 <div align="center">
-  <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="下載次數" />
+  <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="Downloads" />
 </div>
 
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
@@ -13,254 +13,172 @@
 
 ## Overview
 
-Launchpad_Back is a macOS application built with SwiftUI, providing an alternative to the Launchpad feature that was removed in macOS 26 Tahoe by Apple.
+Launchpad_Back recreates a Launchpad-style app launcher for macOS 15.6 and later. It scans common application locations, presents apps in a paged grid, supports folders and drag reordering, and runs as a floating window that can be toggled globally with `Cmd + L`.
 
-**Status**: Feature-complete | **Platform**: macOS 15+ | **Language**: Swift/SwiftUI
+This project exists because Apple removed Launchpad in macOS 26 Tahoe. Launchpad_Back keeps the familiar workflow while staying native to SwiftUI and AppKit.
 
-## Main Features
+## Features
 
-### Core Features
-- **App Search**: Automatically scans and displays all applications from the following locations:
-  - `/Applications`
-  - `/System/Applications`
-  - `/System/Applications/Utilities`
-  - User application directories
-  - Homebrew Cask applications
+- **App discovery**
+  - Scans `/Applications`
+  - Scans `/System/Applications`
+  - Scans `/System/Applications/Utilities`
+  - Scans the user Applications directory
+  - Recursively scans Homebrew Cask installs under `/opt/homebrew/Caskroom`
 
-- **Grid Layout**:
-  - Neat grid arrangement of app icons
-  - Automatic pagination
+- **Launchpad-style navigation**
+  - Responsive paged grid layout
+  - Mouse drag and arrow-key pagination
+  - Trackpad gesture handling through the event manager layer
+  - Search with instant filtering
 
-- **Multiple Gestures & Shortcuts**:
-  - Two-finger swipe gesture on trackpad
-  - Mouse click and drag gesture
-  - Arrow keys for page navigation
-  - Keyboard shortcut support
+- **Organization**
+  - Drag apps to reorder
+  - Drag app onto app to create a folder
+  - Drag app onto folder to add it
+  - Reorder apps inside expanded folders
+  - Remove apps from folders by dragging them out
+  - Reset layout button to restore alphabetical order and clear folders
 
-### User Interface
-- **Native-like Design**:
-  - Dark theme with blurred, translucent background
-  - Inspired by native macOS Launchpad aesthetics
-  - Smooth animations and transitions
+- **Window and shortcuts**
+  - Global `Cmd + L` to toggle visibility
+  - `Cmd + W` to hide the window
+  - `Cmd + Q` to quit
+  - `Esc` to clear search, close folder, exit edit mode, or hide window
 
-- **⌨ Keyboard Shortcuts**:
-  - `Cmd + L`: Toggle Launchpad visibility (global hotkey)
-  - `Cmd + W`: Close Launchpad window
-  - `Cmd + Q`: Quit application
-  - `Esc`: Clear search or close window
-  - `Arrow keys`: Navigate between pages
+- **Icon pipeline**
+  - Resolves symlinked app bundles before loading icons
+  - Falls back to bundle metadata lookup when `NSWorkspace` only returns a generic app icon
+  - Generates a custom initials-based icon when no usable bundle icon exists
+  - Uses async caching to keep scrolling and drag interactions smooth
 
-### Performance & Reliability
-- **Background Processing**: App scanning runs on background threads to keep the UI responsive
-- **Caching**: App icons are loaded asynchronously and cached for faster access
-- **Error Handling**: Comprehensive error handling and logging
-- **Auto-Save**: Saves app order and folder configuration
+## Project Structure
 
-### Advanced Features
-- **Folder Organization**: Group apps into custom folders
-- **Drag & Drop Support**: Reorganize apps and create folders via drag gestures
-- **Edit Mode**: Manage app organization and folders
-- **Duplicate Handling**: Prevents duplicate apps from appearing
-
-## Architecture
-
-### Project Structure
-
-```
+```text
 Launchpad_Back/
+├── Launchpad_BackApp.swift
+├── ContentView.swift
 ├── Models/
-│   └── AppItem.swift              # App data model
+│   └── AppItem.swift
 ├── Services/
-│   ├── AppScannerService.swift    # App discovery and scanning
-│   ├── AppLauncherService.swift   # App launching
-│   ├── AppIconCache.swift         # Icon caching and management
-│   ├── KeyboardEventManager.swift # Global keyboard event handling
-│   ├── GestureManager.swift       # Gesture recognition and handling
-│   ├── GridLayoutManager.swift    # Grid layout calculation
-│   └── Logger.swift               # App logging
+│   ├── AppIconCache.swift
+│   ├── AppIconResolver.swift
+│   ├── AppLauncherService.swift
+│   ├── AppScannerService.swift
+│   ├── GestureManager.swift
+│   ├── GridLayoutManager.swift
+│   ├── KeyboardEventManager.swift
+│   └── Logger.swift
 ├── ViewModels/
-│   ├── LaunchpadViewModel.swift   # Main app state management
-│   ├── SearchViewModel.swift      # Search functionality
-│   ├── PaginationViewModel.swift  # Page navigation logic
-│   └── EditModeManager.swift      # Edit mode state management
+│   ├── EditModeManager.swift
+│   ├── LaunchpadViewModel.swift
+│   ├── PaginationViewModel.swift
+│   └── SearchViewModel.swift
 ├── Views/
-│   ├── ContentView.swift          # Main UI container
-│   ├── LaunchpadView.swift        # Main view arrangement
-│   ├── PageView.swift             # Single page display
-│   ├── AppIconView.swift          # App icon component
-│   ├── SearchBarView.swift        # Search interface
-│   ├── PageIndicatorView.swift    # Page indicator dots
-│   ├── TouchpadScrollView.swift   # Trackpad scroll handling
-│   ├── FolderExpandedView.swift   # Folder expanded UI
-│   ├── BackgroundView.swift       # Background styling
-│   └── ...
-└── Assets/                        # Images and app icons
+│   ├── AppIconView.swift
+│   ├── BackgroundView.swift
+│   ├── FolderExpandedView.swift
+│   ├── PageIndicatorView.swift
+│   └── SearchBarView.swift
+└── Assets.xcassets/
 ```
 
-### Key Components
+## Key Components
 
-#### **LaunchpadViewModel**
-- Core app state management
-- Handles app discovery and folder operations
-- Manages display item order
-- Coordinates between services and views
+- **`LaunchpadViewModel`**
+  - Owns scanned apps, folders, and display order
+  - Persists order and folder structure in `UserDefaults`
+  - Preloads adjacent-page icons for smoother page changes
 
-```swift
-@Published var apps: [AppItem]
-@Published var folders: [AppFolder]
-@Published var displayItems: [LaunchpadDisplayItem]
-@Published var isLoading: Bool
-```
+- **`AppScannerService`**
+  - Scans app bundles from system, user, and Homebrew locations
+  - Extracts display name and bundle identifier from `Info.plist`
+  - Deduplicates apps with a stable identifier
 
-#### **AppScannerService**
-- Scans system directories for `.app` bundles
-- Extracts metadata from `Info.plist` files
-- Handles duplicate detection and filtering
-- Supports multiple search paths:
-  - System apps
-  - User apps
-  - Homebrew Cask
+- **`AppIconResolver`**
+  - Resolves canonical bundle paths
+  - Detects generic `NSWorkspace` icons
+  - Loads `CFBundleIconFile`, `CFBundleIconName`, and related metadata resources
+  - Generates fallback icons for apps with no usable bundle image
 
-#### **AppLauncherService**
-- Launches apps by path or bundle identifier
-- Supports synchronous and asynchronous launching
-- Gracefully handles launch failures
+- **`AppIconCache`**
+  - Caches resized `NSImage` instances by resolved bundle path
+  - Loads icons asynchronously for grid, folder preview, and floating drag overlays
 
-#### **KeyboardEventManager**
-- Global keyboard event monitoring
-- Handles arrow keys, Escape, and modifier combinations
-- Uses Cmd+L to toggle window visibility
+## Requirements
 
-#### **GestureManager**
-- Manages mouse drag gestures
-- Handles trackpad scroll detection
-- Supports cross-page and cross-folder dragging
+- macOS 15.6 or later
+- Xcode 17 or later
 
-#### **AppIconCache**
-- Asynchronous icon loading
-- NSImage caching and retrieval
-- Falls back to app name display if icon unavailable
+## Build
 
-## Installation & Build Instructions
+1. Clone the repository:
 
-### System Requirements
-- **macOS**: 15.0 or later
-
-### Installation & Build
-
-1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/Launchpad_Back.git
+   git clone https://github.com/EricYang801/Launchpad_Back.git
    cd Launchpad_Back
    ```
 
-2. **Open the project in Xcode**:
+2. Open the project in Xcode:
+
    ```bash
    open Launchpad_Back.xcodeproj
    ```
 
-3. **Build and Run**:
-   - Select your Mac as the target device
-   - Press `Cmd + R` to build and run
-   - Or use Product → Run from the menu
+3. Build and run:
+  - Select `My Mac`
+  - Press `Cmd + R`
 
-### Install as Application
+You can also build from Terminal:
 
-After building, you can install the application:
-
-1. Find the generated `.app` in Xcode's build directory
-2. Copy it to `/Applications`
-3. Launch from the Applications folder or via Spotlight
-
-## User Guide
-
-### Basic Operations
-
-1. **Launch an app**:
-   - Click any app icon to launch
-   - Click a folder icon to expand and view contents
-
-2. **Search for apps**:
-   - Click the search bar or start typing
-   - Results are filtered in real time
-   - Press `Esc` to clear search
-
-3. **Navigate between pages**:
-   - Use arrow keys to move between pages
-   - Swipe with two fingers on the trackpad
-   - Click and drag with the mouse
-
-4. **Edit app order**:
-   - Enter edit mode via button
-   - Drag apps to rearrange
-   - Drag apps onto each other to create folders
-
-### Global Hotkeys
-
-- **`Cmd + L`**: Toggle Launchpad visibility from any app
-
-## Technical Details
-
-### Data Models
-
-#### **AppItem**
-```swift
-struct AppItem: LaunchpadItem {
-    let id: UUID
-    let name: String
-    let bundleID: String
-    let path: String
-    let isSystemApp: Bool
-    var displayOrder: Int
-}
+```bash
+xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
 ```
 
-#### **LaunchpadDisplayItem** (enum)
-```swift
-enum LaunchpadDisplayItem {
-    case app(AppItem)
-    case folder(AppFolder)
-}
+## Tests
+
+Run the unit test target with:
+
+```bash
+xcodebuild test -scheme Launchpad_Back -destination 'platform=macOS' -only-testing:Launchpad_BackTests
 ```
 
-#### **AppFolder**
-```swift
-struct AppFolder: LaunchpadItem {
-    let id: UUID
-    var name: String
-    var apps: [AppItem]
-    var displayOrder: Int
-}
-```
+Current tests cover:
+- icon resolution for direct bundles
+- icon resolution for symlinked bundles
+- metadata icon fallback
+- generated fallback icons
+- cache reuse for canonical bundle paths
+- folder creation and restoration
+- reset layout
+- search and pagination
 
-### State Management
+## Usage
 
-The app uses the MVVM pattern and Combine framework:
-- `@StateObject` for ViewModel lifecycle management
-- `@EnvironmentObject` for state sharing across views
-- `@Published` for reactive state updates
-- `ObservableObject` protocol for view synchronization
+### Basic flow
 
-### Persistence
+1. Press `Cmd + L` to show or hide the launcher.
+2. Click an app to launch it.
+3. Type in the search bar to filter apps.
+4. Use the arrow keys or drag gesture to switch pages.
 
-App state is persisted using `UserDefaults`:
-- **launchpad_item_order**: Order of displayed items
-- **launchpad_folders**: Folder definitions and contents
+### Editing and folders
 
-## Known Issues & Limitations
+1. Long press an item to enter edit mode.
+2. Drag an app onto another app to create a folder.
+3. Drag an app onto an existing folder to insert it.
+4. Open a folder to rename it or reorder its contents.
+5. Drag an app out of an expanded folder to remove it.
+6. Use the reset layout button to clear folders and restore alphabetical order.
 
-- Only supports apps with valid `.app` bundles
-- Custom folder icons are not currently supported
+## Notes
+
+- App identity is based on `bundleID`, with install path used as fallback for apps that do not provide one.
+- Folder and item order are persisted with:
+  - `launchpad_item_order`
+  - `launchpad_folders`
+- If an app bundle still exposes only a generic icon, Launchpad_Back now generates a consistent fallback icon instead of showing a dashed placeholder.
 
 ## License
 
-This project is licensed under the GPL-3.0 License. See the [LICENSE](./LICENSE) file for details.
-
-## Author
-
-**Eric_Yang**
-- Created: June 2025
-- Last updated: January 2026
-
-## Issues or Suggestions
-If you have any questions or suggestions, feel free to open an issue or pull request on GitHub!
+This project is licensed under GPL-3.0. See [LICENSE](./LICENSE).

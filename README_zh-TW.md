@@ -1,6 +1,6 @@
 # Launchpad_Back
 
-> 一個使用 SwiftUI 開發的 macOS 應用程式，用於模仿原生macOS啟動台功能
+> 一個用 SwiftUI 製作、在現代 macOS 上取代 Launchpad 的啟動器。
 
 <div align="center">
   <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="下載次數" />
@@ -9,260 +9,176 @@
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
 
 ## 畫面演示
-![主介面](./Example.png) 
+![主介面](./Example.png)
 
-##  概述
+## 概述
 
-Launchpad_Back 是一款基於 SwiftUI 開發的 macOS 應用程式，因為 Apple 在 macOS 26 Tahoe 移除啟動台所以提供一種替代方法。
+Launchpad_Back 是一個為 macOS 15.6 以上版本打造的 Launchpad 替代方案。它會掃描常見應用程式目錄，將 App 顯示成可分頁的網格，支援資料夾、拖曳排序、全域快捷鍵，以及類似原生 Launchpad 的浮動視窗體驗。
 
-**狀態**:  功能完整 | **平台**: macOS 15+ | **語言**: Swift/SwiftUI
+Apple 在 macOS 26 Tahoe 移除了 Launchpad，這個專案就是為了把那套工作流帶回來，同時保留 SwiftUI + AppKit 的原生整合。
 
-##  主要功能
+## 主要功能
 
-### 核心功能
-- **應用程式搜尋**: 自動掃描並顯示來自以下位置的所有應用程式：
-  - `/Applications`
-  - `/System/Applications`
-  - `/System/Applications/Utilities`
-  - 使用者應用程式目錄
-  - Homebrew Cask 應用程式
+- **應用程式掃描**
+  - 掃描 `/Applications`
+  - 掃描 `/System/Applications`
+  - 掃描 `/System/Applications/Utilities`
+  - 掃描使用者 Applications 目錄
+  - 遞迴掃描 `/opt/homebrew/Caskroom` 內的 Homebrew Cask 安裝
 
-- **網格佈局**:
-  - 整潔的應用程式圖示網格排列
-  - 自動進行分頁
+- **Launchpad 式瀏覽**
+  - 自動分頁的網格排列
+  - 滑鼠拖曳與方向鍵翻頁
+  - 由事件管理層處理的觸控板手勢
+  - 即時搜尋與篩選
 
-- **多種手勢及快捷鍵**:
-  - 觸控板兩指滑動手勢
-  - 滑鼠點擊並拖曳手勢
-  - 方向鍵進行頁面導航
-  - 鍵盤快捷鍵支援
+- **整理與編輯**
+  - 拖曳重新排序
+  - 把 App 拖到另一個 App 上可建立資料夾
+  - 把 App 拖到資料夾上可加入資料夾
+  - 在展開資料夾中重新排序內容
+  - 從展開資料夾拖出 App 可移出資料夾
+  - 提供重設版面按鈕，可清除資料夾並恢復依名稱排序
 
-### 使用者介面
-- **跟原生啟動台一樣的設計**:
-  - 深色主題，配備模糊的半透明背景
-  - 靈感來自原生 macOS 啟動台美學
-  - 流暢的動畫和過渡效果
+- **視窗與快捷鍵**
+  - 全域 `Cmd + L` 切換顯示
+  - `Cmd + W` 隱藏視窗
+  - `Cmd + Q` 結束程式
+  - `Esc` 依情境清除搜尋、關閉資料夾、退出編輯或隱藏視窗
 
-- **⌨鍵盤快捷鍵**:
-  - `Cmd + L`: 切換啟動台可見性（全域熱鍵）
-  - `Cmd + W`: 關閉啟動台視窗
-  - `Cmd + Q`: 結束應用程式
-  - `Esc`: 清除搜尋或關閉視窗
-  - `方向鍵`: 在頁面之間導航
+- **圖示處理流程**
+  - 先解析 symlink 後再載入 App bundle 圖示
+  - 若 `NSWorkspace` 只給 generic app icon，會再讀 bundle metadata
+  - 若 bundle 本身沒有可用圖示，會自動產生 initials fallback icon
+  - 使用非同步快取讓分頁、拖曳與資料夾預覽保持順暢
 
-### 效能與可靠性
-- **背景處理**: 應用程式掃描在背景執行緒上進行，保持使用者介面的回應性
-- **快取**: 應用程式圖示非同步載入並快取以加快存取速度
-- **錯誤處理**: 整個應用程式的全面錯誤處理和日誌記錄
-- **自動儲存**: 儲存應用程式順序和資料夾配置
+## 專案結構
 
-### 進階功能
-- **資料夾組織**: 將應用程式分組到自訂資料夾中
-- **拖放支援**: 通過拖曳手勢重新組織應用程式並建立資料夾
-- **編輯模式**: 管理應用程式組織和資料夾
-- **重複處理**: 防止重複應用程式出現
-
-## 架構
-
-### 項目結構
-
-```
+```text
 Launchpad_Back/
+├── Launchpad_BackApp.swift
+├── ContentView.swift
 ├── Models/
-│   └── AppItem.swift              # 應用程式數據模型
+│   └── AppItem.swift
 ├── Services/
-│   ├── AppScannerService.swift    # 應用程式發現和掃描
-│   ├── AppLauncherService.swift   # 應用程式啟動
-│   ├── AppIconCache.swift         # 圖示快取和管理
-│   ├── KeyboardEventManager.swift # 全域鍵盤事件處理
-│   ├── GestureManager.swift       # 手勢辨識和處理
-│   ├── GridLayoutManager.swift    # 網格佈局計算
-│   └── Logger.swift               # 應用程式日誌記錄
+│   ├── AppIconCache.swift
+│   ├── AppIconResolver.swift
+│   ├── AppLauncherService.swift
+│   ├── AppScannerService.swift
+│   ├── GestureManager.swift
+│   ├── GridLayoutManager.swift
+│   ├── KeyboardEventManager.swift
+│   └── Logger.swift
 ├── ViewModels/
-│   ├── LaunchpadViewModel.swift   # 主應用程式狀態管理
-│   ├── SearchViewModel.swift      # 搜尋功能
-│   ├── PaginationViewModel.swift  # 頁面導航邏輯
-│   └── EditModeManager.swift      # 編輯模式狀態管理
+│   ├── EditModeManager.swift
+│   ├── LaunchpadViewModel.swift
+│   ├── PaginationViewModel.swift
+│   └── SearchViewModel.swift
 ├── Views/
-│   ├── ContentView.swift          # 主使用者介面容器
-│   ├── LaunchpadView.swift        # 主要檢視編排
-│   ├── PageView.swift             # 單個頁面呈現
-│   ├── AppIconView.swift          # 應用程式圖示元件
-│   ├── SearchBarView.swift        # 搜尋介面
-│   ├── PageIndicatorView.swift    # 頁面指示器點
-│   ├── TouchpadScrollView.swift   # 觸控板捲動處理
-│   ├── FolderExpandedView.swift   # 資料夾展開使用者介面
-│   ├── BackgroundView.swift       # 背景樣式設定
-│   └── ...
-└── Assets/                        # 圖片和應用程式圖示
+│   ├── AppIconView.swift
+│   ├── BackgroundView.swift
+│   ├── FolderExpandedView.swift
+│   ├── PageIndicatorView.swift
+│   └── SearchBarView.swift
+└── Assets.xcassets/
 ```
 
-### 關鍵元件
+## 核心元件
 
-#### **LaunchpadViewModel** 
-- 核心應用程式狀態管理
-- 處理應用程式發現和資料夾操作
-- 管理顯示項目順序
-- 協調服務和檢視之間的協作
+- **`LaunchpadViewModel`**
+  - 管理掃描到的 App、資料夾與顯示順序
+  - 用 `UserDefaults` 持久化排序與資料夾
+  - 預載入相鄰頁面的 icon
 
-```swift
-@Published var apps: [AppItem]
-@Published var folders: [AppFolder]
-@Published var displayItems: [LaunchpadDisplayItem]
-@Published var isLoading: Bool
-```
+- **`AppScannerService`**
+  - 從系統、使用者與 Homebrew 位置掃描 `.app`
+  - 從 `Info.plist` 讀取顯示名稱與 bundle identifier
+  - 用穩定識別鍵去重
 
-#### **AppScannerService** 
-- 掃描系統目錄以尋找 `.app` 套件
-- 從 `Info.plist` 檔案提取中繼資料
-- 處理重複偵測和篩選
-- 支援多個搜尋路徑：
-  - 系統應用程式
-  - 使用者應用程式
-  - Homebrew Cask
+- **`AppIconResolver`**
+  - 解析 canonical bundle path
+  - 偵測 generic `NSWorkspace` icon
+  - 讀取 `CFBundleIconFile`、`CFBundleIconName` 等 icon metadata
+  - 在沒有可用圖示時生成 fallback icon
 
-#### **AppLauncherService** 
-- 按路徑或套件識別碼啟動應用程式
-- 支援同步和非同步啟動
-- 優雅地處理啟動失敗
+- **`AppIconCache`**
+  - 以解析後的 bundle path 做快取鍵
+  - 非同步載入主畫面、資料夾預覽與拖曳浮層圖示
 
-#### **KeyboardEventManager**
-- 全域鍵盤事件監控
-- 處理方向鍵、Escape 和修飾符組合
-- 使用 Cmd+L 切換視窗可見性
+## 系統需求
 
-#### **GestureManager** 
-- 管理滑鼠拖曳手勢
-- 處理觸控板捲動偵測
-- 支援跨頁面和跨資料夾拖曳
+- macOS 15.6 或以上
+- Xcode 17 或以上
 
-#### **AppIconCache** 
-- 非同步圖示載入
-- NSImage 快取和擷取
-- 若圖示無法使用則回退至應用程式名稱顯示
+## 編譯
 
-## 安裝及編譯說明
+1. 複製專案：
 
-### 系統需求
-- **macOS**: 15.0 或更新版本
-
-### 安裝與編譯
-
-1. **複製專案庫**:
    ```bash
-   git clone https://github.com/yourusername/Launchpad_Back.git
+   git clone https://github.com/EricYang801/Launchpad_Back.git
    cd Launchpad_Back
    ```
 
-2. **在 Xcode 中開啟項目**:
+2. 用 Xcode 開啟：
+
    ```bash
    open Launchpad_Back.xcodeproj
    ```
 
-3. **編譯並執行**:
-   - 選擇您的 Mac 作為目標裝置
-   - 按 `Cmd + R` 進行編譯和執行
-   - 或在選單中使用 Product → Run
+3. 執行：
+  - 選擇 `My Mac`
+  - 按 `Cmd + R`
 
-### 安裝為應用程式
+也可以直接在 Terminal 編譯：
 
-編譯後，您可以安裝該應用程式：
-
-1. 在 Xcode 的編譯目錄中找到內建的 `.app`
-2. 將其複製到 `/Applications`
-3. 從應用程式資料夾或 Spotlight 搜尋啟動
-
-##  使用指南
-
-### 基本操作
-
-1. **啟動應用程式**:
-   - 點擊任何應用程式圖示即可啟動
-   - 點擊資料夾圖示即可展開並查看內容
-
-2. **搜尋應用程式**:
-   - 點擊搜尋列或開始輸入
-   - 結果即時篩選
-   - 按 `Esc` 清除搜尋
-
-3. **在頁面之間導航**:
-   - 使用方向鍵在頁面之間移動
-   - 在觸控板上用兩指滑動
-   - 用滑鼠點擊並拖曳
-
-4. **編輯應用程式排序**:
-   - 按按鈕進入編輯模式
-   - 拖曳應用程式以重新排列
-   - 將應用程式拖曳到彼此上方以建立資料夾
-
-### 全域熱鍵
-
-- **`Cmd + L`**: 從任何應用程式切換啟動台可見性
-
-
-## 技術詳細資訊
-
-### 數據模型
-
-#### **AppItem**
-```swift
-struct AppItem: LaunchpadItem {
-    let id: UUID
-    let name: String
-    let bundleID: String
-    let path: String
-    let isSystemApp: Bool
-    var displayOrder: Int
-}
+```bash
+xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
 ```
 
-#### **LaunchpadDisplayItem** (列舉)
-```swift
-enum LaunchpadDisplayItem {
-    case app(AppItem)
-    case folder(AppFolder)
-}
+## 測試
+
+執行單元測試：
+
+```bash
+xcodebuild test -scheme Launchpad_Back -destination 'platform=macOS' -only-testing:Launchpad_BackTests
 ```
 
-#### **AppFolder**
-```swift
-struct AppFolder: LaunchpadItem {
-    let id: UUID
-    var name: String
-    var apps: [AppItem]
-    var displayOrder: Int
-}
-```
+目前測試涵蓋：
+- 直接 bundle path 的 icon 解析
+- symlink bundle 的 icon 解析
+- metadata icon fallback
+- 自動生成 fallback icon
+- canonical bundle path 的 cache reuse
+- 資料夾建立與還原
+- 重設版面
+- 搜尋與分頁
 
-### 狀態管理
+## 使用方式
 
-應用程式使用 MVVM 模式和 Combine 框架：
-- `@StateObject` 用於 ViewModel 生命週期管理
-- `@EnvironmentObject` 用於跨檢視狀態共享
-- `@Published` 用於反應性狀態更新
-- `ObservableObject` 協議用於檢視同步
+### 基本流程
 
-### 持久化
+1. 按 `Cmd + L` 顯示或隱藏啟動器。
+2. 點一下 App 圖示即可啟動。
+3. 在搜尋列輸入文字即可過濾 App。
+4. 使用方向鍵或拖曳手勢切換頁面。
 
-應用程式狀態使用 `UserDefaults` 進行持久化：
-- **launchpad_item_order**: 已顯示項目的順序
-- **launchpad_folders**: 資料夾定義和內容
+### 編輯與資料夾
 
-## 已知問題與限制
+1. 長按任一項目進入編輯模式。
+2. 把 App 拖到另一個 App 上建立資料夾。
+3. 把 App 拖到現有資料夾上加入資料夾。
+4. 打開資料夾後可以重新命名或調整內容順序。
+5. 從展開資料夾把 App 拖出即可移出資料夾。
+6. 使用重設版面按鈕可清除資料夾並恢復依名稱排序。
 
-- 僅限於具有有效 `.app` 套件的應用程式
-- 自訂資料夾圖示目前不支援
+## 補充說明
+
+- App identity 以 `bundleID` 為主，沒有 `bundleID` 的 App 會退回使用安裝路徑。
+- 排序與資料夾配置會儲存在：
+  - `launchpad_item_order`
+  - `launchpad_folders`
+- 若某些 App 最終仍只暴露 generic icon，Launchpad_Back 會顯示一致的 fallback icon，而不是虛線 placeholder。
 
 ## 授權
 
-本專案採用 GPL-3.0 授權協議。詳見 [LICENSE](./LICENSE) 檔案。
-
-## 作者
-
-**Eric_Yang**
-- 建立日期：2025 年 6 月
-- 上次更新：2026 年 1 月
-
-## 問題或是建議 
-如果有任何問題或是建議，歡迎使用 GitHub 提出 issue 或 pull request！
-
+本專案採用 GPL-3.0。詳見 [LICENSE](./LICENSE)。

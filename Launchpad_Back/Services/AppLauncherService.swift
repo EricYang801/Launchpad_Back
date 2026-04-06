@@ -38,7 +38,7 @@ class AppLauncherService {
                 semaphore.signal()
             }
             
-            semaphore.wait(timeout: .now() + 5)
+            _ = semaphore.wait(timeout: .now() + 5)
             return success
         }
         

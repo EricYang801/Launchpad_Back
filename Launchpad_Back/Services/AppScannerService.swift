@@ -33,23 +33,23 @@ class AppScannerService {
         "com.apple.loginwindow"
     ]
     
-    private var scanPaths: [(path: String, isSystemApp: Bool)] {
-        var paths: [(String, Bool)] = [
-            ("/System/Applications", true),
-            ("/System/Applications/Utilities", true),
-            ("/Applications", false),
-            ("/Applications/Utilities", false)
+    private var scanPaths: [(path: String, isSystemApp: Bool, recursive: Bool)] {
+        var paths: [(String, Bool, Bool)] = [
+            ("/System/Applications", true, false),
+            ("/System/Applications/Utilities", true, false),
+            ("/Applications", false, false),
+            ("/Applications/Utilities", false, false)
         ]
         
         // 添加用戶應用程式目錄
         if let userAppsPath = fileManager.urls(for: .applicationDirectory, in: .userDomainMask).first?.path {
-            paths.append((userAppsPath, false))
+            paths.append((userAppsPath, false, false))
         }
         
         // 添加 Homebrew Cask 應用目錄
         let homebrewCaskPath = "/opt/homebrew/Caskroom"
         if fileManager.fileExists(atPath: homebrewCaskPath) {
-            paths.append((homebrewCaskPath, false))
+            paths.append((homebrewCaskPath, false, true))
         }
         
         return paths
@@ -66,7 +66,7 @@ class AppScannerService {
         var allApps: [AppItem] = []
         
         // 並行掃描所有路徑（使用 autoreleasepool 優化記憶體）
-        for (path, isSystemApp) in scanPaths {
+        for (path, isSystemApp, recursive) in scanPaths {
             group.enter()
             queue.async { [weak self] in
                 defer { group.leave() }
@@ -74,7 +74,7 @@ class AppScannerService {
                 // 優化：使用 autoreleasepool 包裹整個掃描邏輯
                 autoreleasepool {
                     guard let self = self else { return }
-                    let apps = self.scanAppsInDirectory(path, isSystemApp: isSystemApp, recursive: false)
+                    let apps = self.scanAppsInDirectory(path, isSystemApp: isSystemApp, recursive: recursive)
                     
                     // 在專用隊列中安全地添加結果
                     resultQueue.sync {
@@ -198,7 +198,7 @@ class AppScannerService {
         seenIdentifiers.reserveCapacity(apps.count)
         
         for app in apps {
-            let identifier = app.bundleID.isEmpty ? app.path : app.bundleID
+            let identifier = app.stableIdentifier
             if !seenIdentifiers.contains(identifier) {
                 seenIdentifiers.insert(identifier)
                 uniqueApps.append(app)

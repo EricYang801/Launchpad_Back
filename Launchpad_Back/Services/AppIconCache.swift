@@ -11,8 +11,8 @@ import AppKit
 /// 負責非同步加載和緩存應用程式圖示，減少重複讀取磁碟的開銷
 ///
 /// 記憶體優化：
-/// - 降低圖標解析度至 128px（Retina 顯示已足夠清晰）
-/// - 降低快取上限至 100 個圖標，40MB 記憶體限制
+/// - 降低圖標解析度至 96px，貼近 80px UI 顯示尺寸
+/// - 降低快取上限至 60 個圖標，24MB 記憶體限制
 /// - 實作頁面感知快取，只保留當前和相鄰頁面的圖標
 /// - 監聽系統記憶體警告，自動清理快取
 final class AppIconCache: NSObject {
@@ -26,9 +26,10 @@ final class AppIconCache: NSObject {
     
     /// 訪問保護鎖
     private let lock = NSLock()
+    private let resolver: AppIconResolver
     
-    /// 圖標目標尺寸（優化：從 160 降至 128，節省約 30% 記憶體）
-    private let targetIconSize: CGFloat = 128.0
+    /// 圖標目標尺寸（貼近 UI 實際使用尺寸，減少不必要的位圖記憶體）
+    private let targetIconSize: CGFloat = 96.0
     
     /// 當前活躍的頁面索引（用於頁面感知快取）
     private var currentActivePage: Int = 0
@@ -38,12 +39,13 @@ final class AppIconCache: NSObject {
     private var lastCleanupTime: Date = Date()
     private let cleanupInterval: TimeInterval = 60  // 每 60 秒檢查一次是否需要清理
     
-    private override init() {
+    init(resolver: AppIconResolver = .shared) {
+        self.resolver = resolver
         super.init()
         
         // 優化：降低快取限制以節省記憶體
-        cache.countLimit = 100  // 從 200 降至 100
-        cache.totalCostLimit = 40 * 1024 * 1024  // 從 100MB 降至 40MB
+        cache.countLimit = 60
+        cache.totalCostLimit = 24 * 1024 * 1024
         
         // 設定 NSCache 代理，實現 LRU 策略
         cache.delegate = self
@@ -51,7 +53,7 @@ final class AppIconCache: NSObject {
         // 監聽記憶體警告
         setupMemoryWarningObserver()
         
-        Logger.debug("AppIconCache initialized with optimized settings: max=100, limit=40MB, iconSize=128px")
+        Logger.debug("AppIconCache initialized with optimized settings: max=60, limit=24MB, iconSize=96px")
     }
     
     deinit {
@@ -107,12 +109,18 @@ final class AppIconCache: NSObject {
     }
     
     // MARK: - 圖標獲取
+
+    func cachedIcon(for path: String, appName: String? = nil) -> NSImage? {
+        let key = resolver.cacheKey(for: path) as NSString
+        return cache.object(forKey: key)
+    }
     
     /// 獲取應用程式圖示（線程安全，同步操作）
     /// - Parameter path: 應用程式路徑
     /// - Returns: NSImage 或 nil
-    func getIcon(for path: String) -> NSImage? {
-        let key = path as NSString
+    func getIcon(for path: String, appName: String? = nil) -> NSImage? {
+        let keyString = resolver.cacheKey(for: path)
+        let key = keyString as NSString
         
         // 快速路徑：檢查快取（無鎖）
         if let cachedIcon = cache.object(forKey: key) {
@@ -120,94 +128,100 @@ final class AppIconCache: NSObject {
         }
         
         lock.lock()
-        defer { lock.unlock() }
-        
+
         // 再次檢查（可能另一個線程已經加載）
         if let cachedIcon = cache.object(forKey: key) {
+            lock.unlock()
             return cachedIcon
         }
         
         // 檢查是否正在載入（防止重複載入）
-        if loadingPaths.contains(path) {
+        if loadingPaths.contains(keyString) {
+            lock.unlock()
             return nil  // 正在載入中，返回 nil
         }
         
         // 標記為正在載入
-        loadingPaths.insert(path)
+        loadingPaths.insert(keyString)
         
         lock.unlock()  // 解鎖以便其他線程可以進行快速路徑查詢
         
         // 載入圖示（在鎖外執行，使用 autoreleasepool）
+        let resolvedIcon: NSImage = autoreleasepool {
+            resolver.resolveIcon(for: path, appName: appName, targetSize: targetIconSize).image
+        }
         let resizedIcon: NSImage = autoreleasepool {
-            let originalIcon = NSWorkspace.shared.icon(forFile: path)
-            return resizeIcon(originalIcon, to: targetIconSize)
+            resizeIcon(resolvedIcon, to: targetIconSize)
         }
         
-        // 估算圖標大小用於 NSCache 成本（優化後的估算）
-        let estimatedCost = Int(targetIconSize * targetIconSize * 4)  // RGBA: 128*128*4 = 65KB
+        // 估算圖標大小用於 NSCache 成本
+        let estimatedCost = Int(targetIconSize * targetIconSize * 4)
         
         // 寫入快取
         cache.setObject(resizedIcon, forKey: key, cost: estimatedCost)
         
         lock.lock()
-        loadingPaths.remove(path)
+        loadingPaths.remove(keyString)
+        lock.unlock()
         
         return resizedIcon
     }
     
     /// 縮小圖標尺寸（優化版本）
     private func resizeIcon(_ icon: NSImage, to size: CGFloat) -> NSImage {
-        let newSize = NSSize(width: size, height: size)
-        
-        // 檢查圖標是否已經是目標尺寸或更小，避免不必要的處理
-        if icon.size.width <= size && icon.size.height <= size {
-            return icon
+        performGraphicsWork {
+            let newSize = NSSize(width: size, height: size)
+            
+            // 檢查圖標是否已經是目標尺寸或更小，避免不必要的處理
+            if icon.size.width <= size && icon.size.height <= size {
+                return icon
+            }
+            
+            // 直接創建位圖表示，避免中間步驟
+            guard let bitmapRep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size),
+                pixelsHigh: Int(size),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ) else {
+                return icon
+            }
+            
+            bitmapRep.size = newSize
+            
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
+            NSGraphicsContext.current?.imageInterpolation = .high
+            
+            icon.draw(in: NSRect(origin: .zero, size: newSize),
+                      from: NSRect(origin: .zero, size: icon.size),
+                      operation: .copy,
+                      fraction: 1.0)
+            
+            NSGraphicsContext.restoreGraphicsState()
+            
+            let finalImage = NSImage(size: newSize)
+            finalImage.addRepresentation(bitmapRep)
+            return finalImage
         }
-        
-        // 直接創建位圖表示，避免中間步驟
-        guard let bitmapRep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: Int(size),
-            pixelsHigh: Int(size),
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else {
-            return icon
-        }
-        
-        bitmapRep.size = newSize
-        
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
-        NSGraphicsContext.current?.imageInterpolation = .high
-        
-        icon.draw(in: NSRect(origin: .zero, size: newSize),
-                  from: NSRect(origin: .zero, size: icon.size),
-                  operation: .copy,
-                  fraction: 1.0)
-        
-        NSGraphicsContext.restoreGraphicsState()
-        
-        let finalImage = NSImage(size: newSize)
-        finalImage.addRepresentation(bitmapRep)
-        return finalImage
     }
     
     /// 非同步獲取應用程式圖示
-    func getIconAsync(for path: String, completion: @escaping (NSImage?) -> Void) {
+    func getIconAsync(for path: String, appName: String? = nil, completion: @escaping (NSImage?) -> Void) {
         // 先檢查緩存
-        if let cachedIcon = cache.object(forKey: path as NSString) {
+        if let cachedIcon = cachedIcon(for: path, appName: appName) {
             completion(cachedIcon)
             return
         }
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let icon = self?.getIcon(for: path)
+            let icon = self?.getIcon(for: path, appName: appName)
             DispatchQueue.main.async {
                 completion(icon)
             }
@@ -216,12 +230,13 @@ final class AppIconCache: NSObject {
     
     /// 預載入指定範圍的圖標（用於頁面切換優化）
     /// - Parameter paths: 需要預載入的應用路徑列表
-    func preloadIcons(for paths: [String]) {
+    func preloadIcons(for requests: [(path: String, appName: String?)]) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            for path in paths {
+            for request in requests {
+                let cacheKey = self?.resolver.cacheKey(for: request.path) as NSString?
                 // 只預載入尚未快取的圖標
-                if self?.cache.object(forKey: path as NSString) == nil {
-                    _ = self?.getIcon(for: path)
+                if let cacheKey, self?.cache.object(forKey: cacheKey) == nil {
+                    _ = self?.getIcon(for: request.path, appName: request.appName)
                 }
             }
         }
@@ -261,6 +276,14 @@ final class AppIconCache: NSObject {
         let maxSize = cache.totalCostLimit
         let sizeInMB = Double(maxSize) / (1024 * 1024)
         return (maxCount, String(format: "%.1f MB", sizeInMB))
+    }
+    
+    private func performGraphicsWork<T>(_ work: () -> T) -> T {
+        if Thread.isMainThread {
+            return work()
+        }
+        
+        return DispatchQueue.main.sync(execute: work)
     }
 }
 

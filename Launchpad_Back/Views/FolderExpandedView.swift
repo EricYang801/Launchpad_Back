@@ -6,7 +6,11 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
+
+private struct FolderExpandedLayout {
+    let contentFrame: CGRect
+    let gridLayout: GridScreenLayout
+}
 
 /// 展開的文件夾視圖
 struct FolderExpandedView: View {
@@ -15,7 +19,6 @@ struct FolderExpandedView: View {
     let onClose: () -> Void
     let onRename: (String) -> Void
     let onReorder: (Int, Int) -> Void
-    let onRemoveApp: (AppItem) -> Void
     let onStartDragOut: ((AppItem, CGPoint) -> Void)?  // 開始拖出應用（傳遞螢幕位置）
     let onDragOutContinue: ((CGPoint) -> Void)?  // 拖出過程中持續更新位置
     let onDragOutEnd: (() -> Void)?  // 拖出結束
@@ -27,8 +30,8 @@ struct FolderExpandedView: View {
     @State private var draggingApp: AppItem?
     @State private var dragOutOffset: CGSize = .zero
     @State private var isDraggingOut = false
-    @State private var lastDragScreenLocation: CGPoint = .zero
     @State private var hasDraggedOut = false  // 是否已觸發過 dragOut
+    @State private var lastReorderTargetIndex: Int?
     @FocusState private var isNameFieldFocused: Bool
     
     private let folderColumns = 4
@@ -38,7 +41,6 @@ struct FolderExpandedView: View {
          onClose: @escaping () -> Void, 
          onRename: @escaping (String) -> Void,
          onReorder: @escaping (Int, Int) -> Void = { _, _ in },
-         onRemoveApp: @escaping (AppItem) -> Void = { _ in },
          onStartDragOut: ((AppItem, CGPoint) -> Void)? = nil,
          onDragOutContinue: ((CGPoint) -> Void)? = nil,
          onDragOutEnd: (() -> Void)? = nil,
@@ -48,7 +50,6 @@ struct FolderExpandedView: View {
         self.onClose = onClose
         self.onRename = onRename
         self.onReorder = onReorder
-        self.onRemoveApp = onRemoveApp
         self.onStartDragOut = onStartDragOut
         self.onDragOutContinue = onDragOutContinue
         self.onDragOutEnd = onDragOutEnd
@@ -60,7 +61,7 @@ struct FolderExpandedView: View {
     private var columns: [GridItem] {
         Array(repeating: GridItem(.fixed(GridLayoutManager.itemWidth), spacing: GridLayoutManager.horizontalSpacing), count: folderColumns)
     }
-    
+
     private var contentWidth: CGFloat {
         let itemsWidth = CGFloat(folderColumns) * GridLayoutManager.itemWidth
         let spacingWidth = CGFloat(folderColumns - 1) * GridLayoutManager.horizontalSpacing
@@ -93,14 +94,32 @@ struct FolderExpandedView: View {
         }
     }
     
-    @ViewBuilder
-    private func folderContentView(geometry: GeometryProxy) -> some View {
-        let folderFrame = CGRect(
+    private func expandedLayout(in geometry: GeometryProxy) -> FolderExpandedLayout {
+        let contentFrame = CGRect(
             x: (geometry.size.width - contentWidth) / 2,
             y: (geometry.size.height - 400) / 2,
             width: contentWidth,
             height: 400
         )
+        let gridOrigin = CGPoint(
+            x: contentFrame.minX + 24,
+            y: contentFrame.minY + (isEditingMode ? 108 : 82)
+        )
+        let gridLayout = GridScreenLayout(
+            frame: CGRect(origin: gridOrigin, size: CGSize(width: contentWidth - 48, height: contentFrame.height)),
+            columns: folderColumns,
+            itemWidth: GridLayoutManager.itemWidth,
+            itemHeight: GridLayoutManager.itemHeight,
+            horizontalSpacing: GridLayoutManager.horizontalSpacing,
+            verticalSpacing: GridLayoutManager.verticalSpacing
+        )
+
+        return FolderExpandedLayout(contentFrame: contentFrame, gridLayout: gridLayout)
+    }
+
+    @ViewBuilder
+    private func folderContentView(geometry: GeometryProxy) -> some View {
+        let layout = expandedLayout(in: geometry)
         
         VStack(spacing: 12) {
             // 頂部工具欄
@@ -115,10 +134,10 @@ struct FolderExpandedView: View {
             }
             
             // 應用程式網格
-            appsGridView(geometry: geometry, folderFrame: folderFrame)
+            appsGridView(layout: layout)
         }
         .padding(.vertical, 20)
-        .frame(width: contentWidth)
+        .frame(width: layout.contentFrame.width)
         .background(
             RoundedRectangle(cornerRadius: 24)
                 .fill(.ultraThinMaterial)
@@ -150,11 +169,11 @@ struct FolderExpandedView: View {
     }
     
     @ViewBuilder
-    private func appsGridView(geometry: GeometryProxy, folderFrame: CGRect) -> some View {
+    private func appsGridView(layout: FolderExpandedLayout) -> some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: GridLayoutManager.verticalSpacing) {
                 ForEach(Array(folder.apps.enumerated()), id: \.element.id) { index, app in
-                    appIconItem(app: app, geometry: geometry, folderFrame: folderFrame)
+                    appIconItem(app: app, index: index, layout: layout)
                 }
             }
             .padding(.horizontal, 24)
@@ -164,7 +183,7 @@ struct FolderExpandedView: View {
     }
     
     @ViewBuilder
-    private func appIconItem(app: AppItem, geometry: GeometryProxy, folderFrame: CGRect) -> some View {
+    private func appIconItem(app: AppItem, index: Int, layout: FolderExpandedLayout) -> some View {
         FolderAppIconView(
             app: app,
             isEditing: isEditingMode,
@@ -182,7 +201,7 @@ struct FolderExpandedView: View {
         .gesture(
             DragGesture(minimumDistance: isEditingMode ? 5 : 1000, coordinateSpace: .global)
                 .onChanged { value in
-                    handleDragChange(value: value, app: app, geometry: geometry, folderFrame: folderFrame)
+                    handleDragChange(value: value, app: app, appIndex: index, layout: layout)
                 }
                 .onEnded { _ in
                     handleDragEnd()
@@ -190,23 +209,28 @@ struct FolderExpandedView: View {
         )
     }
     
-    private func handleDragChange(value: DragGesture.Value, app: AppItem, geometry: GeometryProxy, folderFrame: CGRect) {
+    private func handleDragChange(value: DragGesture.Value, app: AppItem, appIndex: Int, layout: FolderExpandedLayout) {
+        if draggingApp?.id != app.id {
+            hasDraggedOut = false
+            isDraggingOut = false
+            lastReorderTargetIndex = appIndex
+        }
+        
         draggingApp = app
         dragOutOffset = value.translation
-        lastDragScreenLocation = value.location
-        
-        // 計算當前拖動位置是否在文件夾外
-        let localPos = CGPoint(
-            x: value.startLocation.x + value.translation.width,
-            y: value.startLocation.y + value.translation.height
-        )
-        let folderLocalPos = CGPoint(
-            x: localPos.x - (geometry.size.width - contentWidth) / 2,
-            y: localPos.y
-        )
-        let expandedFrame = CGRect(x: 0, y: folderFrame.minY, width: contentWidth, height: folderFrame.height)
+
         let wasInside = !isDraggingOut
-        isDraggingOut = !expandedFrame.contains(folderLocalPos)
+        isDraggingOut = !layout.contentFrame.contains(value.location)
+        
+        if !isDraggingOut,
+           isEditingMode,
+           let currentIndex = folder.apps.firstIndex(where: { $0.id == app.id }),
+           let targetIndex = folderIndex(for: value.location, layout: layout),
+           targetIndex != currentIndex,
+           targetIndex != lastReorderTargetIndex {
+            lastReorderTargetIndex = targetIndex
+            onReorder(currentIndex, targetIndex)
+        }
         
         // 當剛剛離開文件夾時，觸發 onStartDragOut
         if isDraggingOut && wasInside && !hasDraggedOut {
@@ -231,6 +255,20 @@ struct FolderExpandedView: View {
         }
         draggingApp = nil
         isDraggingOut = false
+        hasDraggedOut = false
+        lastReorderTargetIndex = nil
+    }
+    
+    private func folderIndex(for screenLocation: CGPoint, layout: FolderExpandedLayout) -> Int? {
+        guard !folder.apps.isEmpty else {
+            return nil
+        }
+
+        return layout.gridLayout.clampedIndex(
+            at: screenLocation,
+            itemCount: folder.apps.count,
+            allowsTrailingSlot: false
+        )
     }
     
     private var folderNameView: some View {
@@ -273,85 +311,38 @@ struct FolderAppIconView: View {
     
     var body: some View {
         VStack(spacing: 8) {
-            // 圖示
-            Group {
-                if let icon = app.appIcon, icon.size.width > 0 {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color.gray.opacity(0.3))
-                        .overlay(
-                            Image(systemName: "app.dashed")
-                                .font(.system(size: 30))
-                                .foregroundStyle(.white.opacity(0.5))
-                        )
+            IconImageContainer(isDropTarget: false, isDragging: isDragging) {
+                CachedAppIconImage(path: app.path, appName: app.name) {
+                    IconLoadingPlaceholder(cornerRadius: 18)
                 }
             }
-            .frame(width: GridLayoutManager.iconSize, height: GridLayoutManager.iconSize)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-            .opacity(isDragging ? 0.5 : 1.0)
-            
-            // 名稱
-            Text(app.name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(width: GridLayoutManager.labelMaxWidth, height: GridLayoutManager.labelHeight, alignment: .top)
+
+            IconLabelView(name: app.name)
         }
         .wiggle(isEditing && !isDragging)
+        .opacity(isDragging ? 0.5 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .onLongPressGesture(minimumDuration: 0.5) { onLongPress() }
     }
 }
 
-// 文件夾內拖放代理
-struct FolderDropDelegate: DropDelegate {
-    let item: AppItem
-    let items: [AppItem]
-    @Binding var draggingItem: AppItem?
-    let onReorder: (Int, Int) -> Void
-    
-    func performDrop(info: DropInfo) -> Bool {
-        draggingItem = nil
-        return true
-    }
-    
-    func dropEntered(info: DropInfo) {
-        guard let draggingItem = draggingItem,
-              draggingItem.id != item.id,
-              let fromIndex = items.firstIndex(where: { $0.id == draggingItem.id }),
-              let toIndex = items.firstIndex(where: { $0.id == item.id }) else {
-            return
+#if DEBUG
+struct FolderExpandedView_Previews: PreviewProvider {
+    static var previews: some View {
+        let sampleApps = (0..<20).map { index in
+            AppItem(name: "App \(index + 1)", bundleID: "com.app.\(index)", path: "/Applications/App\(index).app", isSystemApp: false)
         }
-        onReorder(fromIndex, toIndex)
-    }
-    
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        let folder = AppFolder(name: "Utilities", apps: sampleApps)
+        
+        return FolderExpandedView(
+            folder: folder,
+            onAppTap: { _ in },
+            onClose: {},
+            onRename: { _ in },
+            onReorder: { _, _ in },
+            onStartDragOut: { _, _ in }
+        )
     }
 }
-
-
-
-#Preview {
-    let sampleApps = (0..<20).map { index in
-        AppItem(name: "App \(index + 1)", bundleID: "com.app.\(index)", path: "/Applications/App\(index).app", isSystemApp: false)
-    }
-    let folder = AppFolder(name: "Utilities", apps: sampleApps)
-    
-    FolderExpandedView(
-        folder: folder,
-        onAppTap: { _ in },
-        onClose: {},
-        onRename: { _ in },
-        onReorder: { _, _ in },
-        onRemoveApp: { _ in },
-        onStartDragOut: { _, _ in }
-    )
-}
+#endif

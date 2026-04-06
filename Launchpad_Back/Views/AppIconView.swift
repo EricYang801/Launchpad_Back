@@ -54,6 +54,72 @@ extension View {
     }
 }
 
+struct CachedAppIconImage<Placeholder: View>: View {
+    let path: String
+    let appName: String?
+    @ViewBuilder let placeholder: () -> Placeholder
+    
+    @State private var icon: NSImage?
+    @State private var requestedPath = ""
+    
+    var body: some View {
+        Group {
+            if let icon, icon.size.width > 0 {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: path) {
+            loadIcon()
+        }
+        .onDisappear {
+            requestedPath = ""
+            icon = nil
+        }
+    }
+    
+    private func loadIcon() {
+        requestedPath = path
+        
+        if let cachedIcon = AppIconCache.shared.cachedIcon(for: path, appName: appName) {
+            icon = cachedIcon
+            return
+        }
+        
+        icon = nil
+        AppIconCache.shared.getIconAsync(for: path, appName: appName) { loadedIcon in
+            guard requestedPath == path else { return }
+            icon = loadedIcon
+        }
+    }
+}
+
+struct IconLoadingPlaceholder: View {
+    var cornerRadius: CGFloat = 18
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.white.opacity(0.18),
+                        Color.white.opacity(0.06)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            )
+    }
+}
+
 // MARK: - 共用的交互式圖標容器（消除重複代碼）
 
 /// 交互式圖標配置
@@ -72,9 +138,8 @@ struct InteractiveIconConfig {
 struct InteractiveIconModifier: ViewModifier {
     let config: InteractiveIconConfig
     
-    @State private var isHovered = false
-    @State private var isPressed = false
     @State private var dragOffset: CGSize = .zero
+    @State private var didTriggerLongPressDrag = false
     
     func body(content: Content) -> some View {
         content
@@ -83,10 +148,9 @@ struct InteractiveIconModifier: ViewModifier {
             .overlay(dropTargetOverlay)
             .offset(dragOffset)
             .contentShape(Rectangle())
-            .onHover { isHovered = $0 }
+            .highPriorityGesture(editDragGesture, including: .gesture)
             .simultaneousGesture(tapGesture)
-            .simultaneousGesture(longPressGesture)
-            .simultaneousGesture(editDragGesture)
+            .simultaneousGesture(longPressInteractionGesture)
     }
     
     // MARK: - 手勢
@@ -94,20 +158,54 @@ struct InteractiveIconModifier: ViewModifier {
     private var tapGesture: some Gesture {
         TapGesture()
             .onEnded {
-                // 編輯模式下也允許點擊（讓調用者決定如何處理）
-                isPressed = true
                 config.onTap()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    isPressed = false
-                }
             }
     }
     
-    private var longPressGesture: some Gesture {
+    private var longPressInteractionGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.5)
-            .onEnded { _ in
-                Logger.info("Long press detected on \(config.name)")
-                config.onLongPress?()
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .onChanged { value in
+                guard !config.isEditing else { return }
+                
+                switch value {
+                case .second(true, let drag?):
+                    if !didTriggerLongPressDrag {
+                        Logger.info("Long press detected on \(config.name)")
+                        config.onLongPress?()
+                        didTriggerLongPressDrag = true
+                    }
+                    dragOffset = drag.translation
+                    config.onDragChanged?(drag.location)
+                default:
+                    break
+                }
+            }
+            .onEnded { value in
+                guard !config.isEditing else {
+                    didTriggerLongPressDrag = false
+                    return
+                }
+                
+                switch value {
+                case .first(true):
+                    Logger.info("Long press detected on \(config.name)")
+                    config.onLongPress?()
+                case .second(true, let drag?):
+                    if !didTriggerLongPressDrag {
+                        Logger.info("Long press detected on \(config.name)")
+                        config.onLongPress?()
+                    }
+                    dragOffset = drag.translation
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        dragOffset = .zero
+                    }
+                    config.onDragEnded?()
+                default:
+                    break
+                }
+                
+                didTriggerLongPressDrag = false
             }
     }
     
@@ -143,13 +241,11 @@ struct InteractiveIconModifier: ViewModifier {
 }
 
 /// 計算縮放值的工具函數
-func calculateScaleValue(isDropTarget: Bool, isDragging: Bool, isPressed: Bool, isHovered: Bool) -> CGFloat {
+func calculateScaleValue(isDropTarget: Bool, isDragging: Bool, isHovered: Bool) -> CGFloat {
     if isDropTarget {
         return 1.2
     } else if isDragging {
         return 1.1
-    } else if isPressed {
-        return 0.85
     } else if isHovered {
         return 1.08
     }
@@ -165,16 +261,14 @@ struct IconImageContainer<Content: View>: View {
     @ViewBuilder let content: () -> Content
     
     @State private var isHovered = false
-    @State private var isPressed = false
     
     var body: some View {
         content()
             .frame(width: GridLayoutManager.iconSize, height: GridLayoutManager.iconSize)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .shadow(color: .black.opacity(0.2), radius: isHovered ? 8 : 4, x: 0, y: isHovered ? 4 : 2)
-            .scaleEffect(calculateScaleValue(isDropTarget: isDropTarget, isDragging: isDragging, isPressed: isPressed, isHovered: isHovered))
+            .scaleEffect(calculateScaleValue(isDropTarget: isDropTarget, isDragging: isDragging, isHovered: isHovered))
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-            .animation(.spring(response: 0.15, dampingFraction: 0.8), value: isPressed)
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isDropTarget)
             .onHover { isHovered = $0 }
     }
@@ -205,7 +299,6 @@ struct AppIconView: View {
     var isEditing: Bool = false
     var isDropTarget: Bool = false
     var onLongPress: (() -> Void)?
-    var onDragStarted: ((CGPoint) -> Void)?
     var onDragChanged: ((CGPoint) -> Void)?
     var onDragEnded: (() -> Void)?
     
@@ -213,12 +306,7 @@ struct AppIconView: View {
         VStack(spacing: 8) {
             // 圖示
             IconImageContainer(isDropTarget: isDropTarget, isDragging: isDragging) {
-                if let icon = app.appIcon, icon.size.width > 0 {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                } else {
+                CachedAppIconImage(path: app.path, appName: app.name) {
                     defaultIconView
                 }
             }
@@ -239,24 +327,7 @@ struct AppIconView: View {
     }
     
     private var defaultIconView: some View {
-        RoundedRectangle(cornerRadius: 18)
-            .fill(LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.gray.opacity(0.4),
-                    Color.gray.opacity(0.2)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ))
-            .overlay(
-                Image(systemName: "app.dashed")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.white.opacity(0.7))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
-            )
+        IconLoadingPlaceholder(cornerRadius: 18)
     }
 }
 
@@ -312,16 +383,11 @@ struct FolderIconView: View {
         ) {
             ForEach(0..<9, id: \.self) { index in
                 if index < folder.apps.count {
-                    if let icon = folder.apps[index].appIcon {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: iconSize, height: iconSize)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                    } else {
+                    CachedAppIconImage(path: folder.apps[index].path, appName: folder.apps[index].name) {
                         emptySlot(size: iconSize)
                     }
+                    .frame(width: iconSize, height: iconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
                 } else {
                     emptySlot(size: iconSize)
                 }
@@ -377,7 +443,11 @@ struct LaunchpadItemView: View {
     }
 }
 
-#Preview {
-    let sampleApp = AppItem(name: "Safari", bundleID: "com.apple.Safari", path: "/Applications/Safari.app", isSystemApp: false)
-    AppIconView(app: sampleApp) {}
+#if DEBUG
+struct AppIconView_Previews: PreviewProvider {
+    static var previews: some View {
+        let sampleApp = AppItem(name: "Safari", bundleID: "com.apple.Safari", path: "/Applications/Safari.app", isSystemApp: false)
+        return AppIconView(app: sampleApp) {}
+    }
 }
+#endif

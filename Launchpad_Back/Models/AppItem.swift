@@ -5,7 +5,7 @@
 //  Created by Eric Yang on 2025/1/14.
 //
 
-import AppKit
+import Foundation
 
 /// Launchpad 項目類型協議
 protocol LaunchpadItem: Identifiable, Hashable {
@@ -46,19 +46,18 @@ struct AppItem: LaunchpadItem {
         self.isSystemApp = isSystemApp
         self.displayOrder = displayOrder
     }
-    
-    /// 獲取應用程式圖示（會使用快取）
-    /// 優化：每次調用都是按需獲取，不在模型中儲存圖標以節省記憶體
-    var appIcon: NSImage? {
-        AppIconCache.shared.getIcon(for: path)
+    /// 用於持久化與去重的穩定識別鍵。
+    /// 某些 App 沒有 bundle ID，此時退回使用安裝路徑。
+    var stableIdentifier: String {
+        bundleID.isEmpty ? path : bundleID
     }
     
     func hash(into hasher: inout Hasher) {
-        hasher.combine(bundleID)
+        hasher.combine(stableIdentifier)
     }
     
     static func == (lhs: AppItem, rhs: AppItem) -> Bool {
-        lhs.bundleID == rhs.bundleID
+        lhs.stableIdentifier == rhs.stableIdentifier
     }
 }
 
@@ -81,34 +80,12 @@ struct AppFolder: LaunchpadItem {
     var appCount: Int {
         apps.count
     }
-    
-    /// 獲取文件夾預覽圖示（最多顯示 9 個應用圖示）
-    /// 優化：改為計算屬性，不快取結果，減少記憶體佔用
-    /// 每次訪問時按需從快取獲取，而不是在 AppFolder 中保存引用
-    var previewIcons: [NSImage?] {
-        Array(apps.prefix(9)).map { app in
-            AppIconCache.shared.getIcon(for: app.path)
-        }
-    }
-    
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
     
     static func == (lhs: AppFolder, rhs: AppFolder) -> Bool {
         lhs.id == rhs.id
-    }
-    
-    /// 添加應用到文件夾
-    mutating func addApp(_ app: AppItem) {
-        if !apps.contains(where: { $0.bundleID == app.bundleID }) {
-            apps.append(app)
-        }
-    }
-    
-    /// 從文件夾移除應用
-    mutating func removeApp(_ app: AppItem) {
-        apps.removeAll { $0.bundleID == app.bundleID }
     }
 }
 
@@ -147,6 +124,15 @@ enum LaunchpadDisplayItem: Identifiable, Hashable {
                 folder.displayOrder = newValue
                 self = .folder(folder)
             }
+        }
+    }
+
+    var persistenceKey: String {
+        switch self {
+        case .app(let app):
+            return "app:\(app.stableIdentifier)"
+        case .folder(let folder):
+            return "folder:\(folder.id.uuidString)"
         }
     }
     
