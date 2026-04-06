@@ -53,9 +53,13 @@ struct SearchBarView: View {
     }
 }
 
-#Preview {
-    ZStack {
-        Color.black
-        SearchBarView(text: .constant(""))
+#if DEBUG
+struct SearchBarView_Previews: PreviewProvider {
+    static var previews: some View {
+        ZStack {
+            Color.black
+            SearchBarView(text: .constant(""))
+        }
     }
 }
+#endif

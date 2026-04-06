@@ -9,6 +9,11 @@
 import SwiftUI
 import Combine
 
+private struct SearchIndexEntry {
+    let app: AppItem
+    let searchText: String
+}
+
 /// 主要的 Launchpad ViewModel
 /// 負責應用程式列表的管理和狀態
 /// 
@@ -16,7 +21,7 @@ import Combine
 /// - 使用防抖動機制減少頻繁的 UserDefaults 寫入
 /// - 優化 @Published 屬性使用
 /// - 改善記憶體釋放邏輯
-class LaunchpadViewModel: ObservableObject {
+final class LaunchpadViewModel: ObservableObject {
     @Published var apps: [AppItem] = []
     @Published var folders: [AppFolder] = []
     @Published var displayItems: [LaunchpadDisplayItem] = [] {
@@ -27,10 +32,12 @@ class LaunchpadViewModel: ObservableObject {
     }
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published private(set) var searchableApps: [AppItem] = []
     
     private let scannerService: AppScannerService
     private let launcherService: AppLauncherService
-    private var cancellables: Set<AnyCancellable> = []
+    private let defaults: UserDefaults
+    private var searchIndex: [SearchIndexEntry] = []
     
     // 持久化存儲鍵
     private let orderKey = "launchpad_item_order"
@@ -42,14 +49,16 @@ class LaunchpadViewModel: ObservableObject {
     
     // 優化：快取當前頁面信息，用於圖標快取管理
     private var currentPage: Int = 0
-    private let itemsPerPage: Int = 35
+    private var itemsPerPage: Int = 35
     
     init(
         scannerService: AppScannerService = AppScannerService(),
-        launcherService: AppLauncherService = AppLauncherService()
+        launcherService: AppLauncherService = AppLauncherService(),
+        defaults: UserDefaults = .standard
     ) {
         self.scannerService = scannerService
         self.launcherService = launcherService
+        self.defaults = defaults
         Logger.info("LaunchpadViewModel initialized with memory optimizations")
     }
     
@@ -69,50 +78,58 @@ class LaunchpadViewModel: ObservableObject {
         Logger.info("Starting app loading...")
         
         DispatchQueue.global(qos: .background).async { [weak self] in
-            do {
-                let apps = self?.scannerService.scanInstalledApps() ?? []
+            let apps = self?.scannerService.scanInstalledApps() ?? []
+            
+            DispatchQueue.main.async {
+                let searchState = self?.buildSearchState(from: apps)
+                self?.apps = apps
+                self?.searchableApps = searchState?.apps ?? []
+                self?.searchIndex = searchState?.index ?? []
+                self?.initializeDisplayItems()
+                self?.isLoading = false
+                Logger.info("App loading completed. Found \(apps.count) applications")
                 
-                DispatchQueue.main.async {
-                    self?.apps = apps
-                    self?.initializeDisplayItems()
-                    self?.isLoading = false
-                    Logger.info("App loading completed. Found \(apps.count) applications")
-                    
-                    // 優化：更新圖標快取的活躍頁面
-                    self?.updateIconCacheActivePage()
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.isLoading = false
-                    self?.errorMessage = "Failed to load apps: \(error.localizedDescription)"
-                    Logger.error(error)
-                }
+                // 優化：更新圖標快取的活躍頁面
+                self?.updateIconCacheActivePage()
             }
         }
     }
     
-    /// 更新顯示項目列表（移除已在文件夾中的應用，並同步文件夾內容）
-    private func updateDisplayItems() {
-        // 獲取所有在文件夾中的應用 bundleID
-        let appsInFolders = Set(folders.flatMap { $0.apps.map { $0.bundleID } })
+    /// 根據最新的 apps / folders 重新同步顯示列表，保留現有排序。
+    private func reconcileDisplayItems() {
+        let appsInFolders = Set(folders.flatMap { $0.apps.map(\.stableIdentifier) })
+        var standaloneAppsByIdentifier = Dictionary(
+            uniqueKeysWithValues: apps
+                .filter { !appsInFolders.contains($0.stableIdentifier) }
+                .map { ($0.stableIdentifier, $0) }
+        )
+        var foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+        var reconciledItems: [LaunchpadDisplayItem] = []
         
-        // 更新 displayItems：移除已在文件夾中的應用，並同步文件夾內容
-        displayItems = displayItems.compactMap { item -> LaunchpadDisplayItem? in
+        for item in displayItems {
             switch item {
             case .app(let app):
-                // 如果應用已在文件夾中，則移除
-                return appsInFolders.contains(app.bundleID) ? nil : item
-            case .folder(let oldFolder):
-                // 用最新的文件夾數據替換（同步 apps 等內容）
-                if let updatedFolder = folders.first(where: { $0.id == oldFolder.id }) {
-                    return .folder(updatedFolder)
+                let key = app.stableIdentifier
+                guard let latestApp = standaloneAppsByIdentifier.removeValue(forKey: key) else {
+                    continue
                 }
-                // 文件夾已被刪除
-                return nil
+                reconciledItems.append(.app(latestApp))
+            case .folder(let folder):
+                guard let latestFolder = foldersById.removeValue(forKey: folder.id) else {
+                    continue
+                }
+                reconciledItems.append(.folder(latestFolder))
             }
         }
         
-        // 注意：這裡不直接調用 saveOrder()，因為 didSet 會觸發防抖動保存
+        let remainingApps = standaloneAppsByIdentifier.values
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map(LaunchpadDisplayItem.app)
+        let remainingFolders = foldersById.values
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map(LaunchpadDisplayItem.folder)
+        
+        displayItems = reconciledItems + remainingApps + remainingFolders
     }
     
     /// 初始化顯示項目列表（首次載入時按名稱排序，或從保存的順序載入）
@@ -121,37 +138,47 @@ class LaunchpadViewModel: ObservableObject {
         loadFolders()
         
         // 獲取所有在文件夾中的應用 ID
-        let appsInFolders = Set(folders.flatMap { $0.apps.map { $0.bundleID } })
+        let appsInFolders = Set(folders.flatMap { $0.apps.map(\.stableIdentifier) })
+        let standaloneAppsByIdentifier = Dictionary(
+            uniqueKeysWithValues: apps
+                .filter { !appsInFolders.contains($0.stableIdentifier) }
+                .map { ($0.stableIdentifier, $0) }
+        )
+        let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id.uuidString, $0) })
         
         // 嘗試載入保存的順序
         if let savedOrder = loadOrder() {
             var orderedItems: [LaunchpadDisplayItem] = []
+            var remainingApps = standaloneAppsByIdentifier
+            var remainingFolders = foldersById
             
             // 按保存的順序排列
             for itemKey in savedOrder {
                 // 檢查是否為文件夾 (格式: "folder:UUID")
                 if itemKey.hasPrefix("folder:") {
                     let folderId = String(itemKey.dropFirst(7))
-                    if let folder = folders.first(where: { $0.id.uuidString == folderId }) {
+                    if let folder = remainingFolders.removeValue(forKey: folderId) {
                         orderedItems.append(.folder(folder))
                     }
                 }
-                // 檢查是否為應用 (格式: "app:bundleID")
+                // 檢查是否為應用 (格式: "app:stableIdentifier")
                 else if itemKey.hasPrefix("app:") {
-                    let bundleId = String(itemKey.dropFirst(4))
-                    if let app = apps.first(where: { $0.bundleID == bundleId && !appsInFolders.contains($0.bundleID) }) {
+                    let appIdentifier = String(itemKey.dropFirst(4))
+                    if let app = remainingApps.removeValue(forKey: appIdentifier) {
                         orderedItems.append(.app(app))
                     }
                 }
             }
             
             // 添加新安裝的應用（不在保存順序中的）
-            let existingBundleIds = Set(orderedItems.compactMap { item -> String? in
-                if case .app(let app) = item { return app.bundleID }
-                return nil
-            })
-            let newApps = apps.filter { !appsInFolders.contains($0.bundleID) && !existingBundleIds.contains($0.bundleID) }
-            orderedItems.append(contentsOf: newApps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }.map { .app($0) })
+            let newApps = remainingApps.values
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                .map(LaunchpadDisplayItem.app)
+            let newFolders = remainingFolders.values
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                .map(LaunchpadDisplayItem.folder)
+            orderedItems.append(contentsOf: newApps)
+            orderedItems.append(contentsOf: newFolders)
             
             displayItems = orderedItems
             Logger.info("Loaded saved order with \(orderedItems.count) items")
@@ -160,7 +187,7 @@ class LaunchpadViewModel: ObservableObject {
             var items: [LaunchpadDisplayItem] = []
             
             // 添加不在文件夾中的應用
-            let standaloneApps = apps.filter { !appsInFolders.contains($0.bundleID) }
+            let standaloneApps = apps.filter { !appsInFolders.contains($0.stableIdentifier) }
             items.append(contentsOf: standaloneApps.map { .app($0) })
             
             // 添加文件夾
@@ -172,6 +199,14 @@ class LaunchpadViewModel: ObservableObject {
             }
             Logger.info("No saved order, sorted by name")
         }
+    }
+
+    private func defaultSortedDisplayItems() -> [LaunchpadDisplayItem] {
+        apps
+            .map(LaunchpadDisplayItem.app)
+            .sorted { item1, item2 in
+                item1.name.localizedCaseInsensitiveCompare(item2.name) == .orderedAscending
+            }
     }
     
     // MARK: - 持久化（優化版）
@@ -190,21 +225,11 @@ class LaunchpadViewModel: ObservableObject {
     
     /// 立即保存當前順序（內部方法）
     private func saveOrderImmediately() {
-        // 使用 bundleID（對於應用）或 folder ID（對於文件夾）來保存順序
-        let order = displayItems.map { item -> String in
-            switch item {
-            case .app(let app):
-                return "app:\(app.bundleID)"
-            case .folder(let folder):
-                return "folder:\(folder.id.uuidString)"
-            }
-        }
+        let order = displayItems.map(\.persistenceKey)
         
         // 優化：批次寫入，減少 I/O 操作
-        let defaults = UserDefaults.standard
         defaults.set(order, forKey: orderKey)
         saveFolders(to: defaults)
-        defaults.synchronize()  // 強制立即寫入
         
         Logger.debug("Saved order with \(order.count) items and \(folders.count) folders")
     }
@@ -216,17 +241,17 @@ class LaunchpadViewModel: ObservableObject {
     
     /// 載入保存的順序
     private func loadOrder() -> [String]? {
-        return UserDefaults.standard.stringArray(forKey: orderKey)
+        defaults.stringArray(forKey: orderKey)
     }
     
     /// 保存文件夾（優化：接受 UserDefaults 參數，避免重複獲取）
     private func saveFolders(to defaults: UserDefaults? = nil) {
-        let defaults = defaults ?? UserDefaults.standard
+        let defaults = defaults ?? self.defaults
         let folderData = folders.map { folder -> [String: Any] in
-            return [
+            [
                 "id": folder.id.uuidString,
                 "name": folder.name,
-                "appBundleIds": folder.apps.map { $0.bundleID }  // 使用 bundleID
+                "appIdentifiers": folder.apps.map(\.stableIdentifier)
             ]
         }
         defaults.set(folderData, forKey: foldersKey)
@@ -234,7 +259,7 @@ class LaunchpadViewModel: ObservableObject {
     
     /// 載入文件夾
     private func loadFolders() {
-        guard let folderData = UserDefaults.standard.array(forKey: foldersKey) as? [[String: Any]] else {
+        guard let folderData = defaults.array(forKey: foldersKey) as? [[String: Any]] else {
             return
         }
         
@@ -245,15 +270,15 @@ class LaunchpadViewModel: ObservableObject {
                 return nil
             }
             
-            // 支援舊格式 (appIds) 和新格式 (appBundleIds)
+            // 支援舊格式 (appIds / appBundleIds) 和新格式 (appIdentifiers)
             let folderApps: [AppItem]
-            if let bundleIds = data["appBundleIds"] as? [String] {
-                // 新格式：使用 bundleID
+            if let identifiers = data["appIdentifiers"] as? [String] {
+                folderApps = identifiers.compactMap(app(withIdentifier:))
+            } else if let bundleIds = data["appBundleIds"] as? [String] {
                 folderApps = bundleIds.compactMap { bundleId -> AppItem? in
-                    return apps.first { $0.bundleID == bundleId }
+                    apps.first { $0.bundleID == bundleId }
                 }
             } else if let appIds = data["appIds"] as? [String] {
-                // 舊格式：使用 UUID（相容性）
                 folderApps = appIds.compactMap { appIdString -> AppItem? in
                     guard let appId = UUID(uuidString: appIdString) else { return nil }
                     return apps.first { $0.id == appId }
@@ -273,9 +298,9 @@ class LaunchpadViewModel: ObservableObject {
     // MARK: - 圖標快取優化
     
     /// 更新圖標快取的活躍頁面
-    /// - Parameter page: 當前頁面索引
-    func updateActivePage(_ page: Int) {
+    func updateActivePage(_ page: Int, itemsPerPage: Int) {
         currentPage = page
+        self.itemsPerPage = max(1, itemsPerPage)
         updateIconCacheActivePage()
         
         // 預載入相鄰頁面的圖標
@@ -289,17 +314,60 @@ class LaunchpadViewModel: ObservableObject {
     
     /// 預載入相鄰頁面的圖標
     private func preloadAdjacentPageIcons(_ page: Int) {
+        guard !displayItems.isEmpty else { return }
+        
         let startIndex = max(0, (page - 1) * itemsPerPage)
         let endIndex = min(displayItems.count, (page + 2) * itemsPerPage)
+        guard startIndex < endIndex else { return }
         
-        let paths = displayItems[startIndex..<endIndex].compactMap { item -> String? in
+        let requests = displayItems[startIndex..<endIndex].compactMap { item -> (path: String, appName: String?)? in
             if case .app(let app) = item {
-                return app.path
+                return (path: app.path, appName: app.name)
             }
             return nil
         }
         
-        AppIconCache.shared.preloadIcons(for: paths)
+        AppIconCache.shared.preloadIcons(for: requests)
+    }
+
+    private func buildSearchState(from apps: [AppItem]) -> (apps: [AppItem], index: [SearchIndexEntry]) {
+        let searchableApps = Dictionary(grouping: apps, by: \.stableIdentifier)
+            .compactMapValues(\.first)
+            .values
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        let index = searchableApps.map { app in
+            SearchIndexEntry(
+                app: app,
+                searchText: "\(app.name)\n\(app.bundleID)\n\(app.path)".lowercased()
+            )
+        }
+
+        return (searchableApps, index)
+    }
+    
+    private func app(withIdentifier identifier: String) -> AppItem? {
+        apps.first { $0.stableIdentifier == identifier }
+    }
+    
+    func filteredApps(matching searchText: String) -> [AppItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return searchableApps
+        }
+        
+        return searchIndex
+            .filter { $0.searchText.contains(query) }
+            .map(\.app)
+    }
+    
+    func filteredDisplayItems(matching searchText: String) -> [LaunchpadDisplayItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return displayItems
+        }
+        
+        return filteredApps(matching: query).map(LaunchpadDisplayItem.app)
     }
     
     // MARK: - 應用程式操作
@@ -320,17 +388,18 @@ class LaunchpadViewModel: ObservableObject {
         }
     }
     
-    /// 刷新應用程式列表
-    func refreshApps() {
-        Logger.info("Refreshing app list...")
-        apps.removeAll()
-        AppIconCache.shared.clearCache()
-        loadInstalledApps()
-    }
-    
-    /// 清除錯誤訊息
-    func clearError() {
-        errorMessage = nil
+    /// 重設自訂排序與文件夾，恢復為依名稱排序。
+    func resetLayout() {
+        saveOrderWorkItem?.cancel()
+        defaults.removeObject(forKey: orderKey)
+        defaults.removeObject(forKey: foldersKey)
+        
+        folders.removeAll()
+        displayItems = defaultSortedDisplayItems()
+        
+        saveOrderWorkItem?.cancel()
+        saveOrderImmediately()
+        Logger.info("Reset launchpad layout to default alphabetical order")
     }
     
     // MARK: - 排序和文件夾管理
@@ -353,6 +422,15 @@ class LaunchpadViewModel: ObservableObject {
         
         Logger.info("Moved item from \(sourceIndex) to \(adjustedDestination)")
     }
+
+    func moveItem(withId id: UUID, to destinationIndex: Int) {
+        guard let sourceIndex = indexOfItem(withId: id) else {
+            Logger.debug("moveItem(withId:): missing source item \(id)")
+            return
+        }
+        
+        moveItem(from: sourceIndex, to: destinationIndex)
+    }
     
     /// 創建新文件夾（將兩個應用合併，在目標位置插入文件夾）
     @discardableResult
@@ -364,79 +442,25 @@ class LaunchpadViewModel: ObservableObject {
         
         folders.append(folder)
         
-        // 找到 app1（目標應用）在 displayItems 中的位置
-        if let targetIndex = displayItems.firstIndex(where: { 
+        if let targetIndex = displayItems.firstIndex(where: {
             if case .app(let app) = $0 { return app.id == app1.id }
             return false
         }) {
-            // 在目標位置插入文件夾
-            displayItems[targetIndex] = .folder(folder)
-            
-            // 移除被拖拽的應用（app2）
-            displayItems.removeAll { item in
-                if case .app(let app) = item { return app.id == app2.id }
-                return false
+            let idsToRemove = Set([app1.id, app2.id])
+            let removedBeforeTarget = displayItems[..<targetIndex].reduce(into: 0) { partialResult, item in
+                if idsToRemove.contains(item.id) {
+                    partialResult += 1
+                }
             }
+            displayItems.removeAll { idsToRemove.contains($0.id) }
+            let insertionIndex = max(0, targetIndex - removedBeforeTarget)
+            displayItems.insert(.folder(folder), at: min(insertionIndex, displayItems.count))
         } else {
-            // 如果找不到，回退到舊行為
-            updateDisplayItems()
+            reconcileDisplayItems()
         }
         
         Logger.info("Created folder '\(folder.name)' with apps: \(app1.name), \(app2.name)")
         return folder
-    }
-    
-    /// 移動項目並創建文件夾
-    func moveItemToCreateFolder(from sourceIndex: Int, targetApp: AppItem, draggedApp: AppItem) {
-        guard sourceIndex >= 0, sourceIndex < displayItems.count else { return }
-        
-        // 先移除源位置的項目
-        displayItems.remove(at: sourceIndex)
-        
-        // 創建文件夾
-        let folder = AppFolder(name: "New Folder", apps: [targetApp, draggedApp])
-        folders.append(folder)
-        
-        // 找到目標應用的位置並替換為文件夾
-        if let targetIndex = displayItems.firstIndex(where: {
-            if case .app(let app) = $0 { return app.id == targetApp.id }
-            return false
-        }) {
-            displayItems[targetIndex] = .folder(folder)
-        }
-        
-        Logger.info("Created folder with \(targetApp.name) and \(draggedApp.name)")
-    }
-    
-    /// 移動項目到文件夾
-    func moveItemToFolder(from sourceIndex: Int, folder: AppFolder) {
-        guard sourceIndex >= 0, sourceIndex < displayItems.count else { return }
-        
-        // 獲取要移動的項目
-        let item = displayItems[sourceIndex]
-        guard case .app(let app) = item else { return }
-        
-        // 添加到文件夾
-        guard let folderIndex = folders.firstIndex(where: { $0.id == folder.id }) else { return }
-        
-        var updatedFolder = folders[folderIndex]
-        guard !updatedFolder.apps.contains(where: { $0.id == app.id }) else { return }
-        
-        updatedFolder.apps.append(app)
-        folders[folderIndex] = updatedFolder
-        
-        // 從 displayItems 移除
-        displayItems.remove(at: sourceIndex)
-        
-        // 更新 displayItems 中的文件夾
-        if let folderDisplayIndex = displayItems.firstIndex(where: {
-            if case .folder(let f) = $0 { return f.id == folder.id }
-            return false
-        }) {
-            displayItems[folderDisplayIndex] = .folder(updatedFolder)
-        }
-        
-        Logger.info("Moved \(app.name) to folder '\(folder.name)'")
     }
     
     /// 將應用添加到現有文件夾
@@ -454,7 +478,18 @@ class LaunchpadViewModel: ObservableObject {
         
         updatedFolder.apps.append(app)
         folders[folderIndex] = updatedFolder
-        updateDisplayItems()
+        displayItems.removeAll { $0.id == app.id }
+        
+        if let folderDisplayIndex = displayItems.firstIndex(where: {
+            if case .folder(let existingFolder) = $0 {
+                return existingFolder.id == folder.id
+            }
+            return false
+        }) {
+            displayItems[folderDisplayIndex] = .folder(updatedFolder)
+        } else {
+            reconcileDisplayItems()
+        }
         
         Logger.info("Added \(app.name) to folder '\(folder.name)'")
     }
@@ -506,7 +541,13 @@ class LaunchpadViewModel: ObservableObject {
         // 根據放置方式處理被移出的應用
         switch placement {
         case .updateDisplay:
-            updateDisplayItems()
+            if let idx = folderDisplayIndex {
+                let safeIndex = min(idx + 1, displayItems.count)
+                displayItems.insert(.app(app), at: safeIndex)
+            } else {
+                displayItems.append(.app(app))
+            }
+            reconcileDisplayItems()
         case .floatingDrag:
             break  // 不做額外處理，讓浮動拖曳邏輯自己決定
         case .appendToEnd:
@@ -525,6 +566,7 @@ class LaunchpadViewModel: ObservableObject {
     
     /// 將應用插入到指定位置
     func insertAppAt(app: AppItem, index: Int) {
+        displayItems.removeAll { $0.id == app.id }
         let safeIndex = min(max(0, index), displayItems.count)
         displayItems.insert(.app(app), at: safeIndex)
         Logger.info("Inserted \(app.name) at index \(safeIndex)")
@@ -550,6 +592,8 @@ class LaunchpadViewModel: ObservableObject {
             return false
         }) {
             displayItems[displayIndex] = .folder(updatedFolder)
+        } else {
+            reconcileDisplayItems()
         }
         
         Logger.info("Reordered apps in folder '\(folder.name)': moved from \(sourceIndex) to \(destinationIndex)")
@@ -564,42 +608,40 @@ class LaunchpadViewModel: ObservableObject {
         var updatedFolder = folders[folderIndex]
         updatedFolder.name = newName
         folders[folderIndex] = updatedFolder
-        updateDisplayItems()
+        reconcileDisplayItems()
         
         Logger.info("Renamed folder to '\(newName)'")
     }
     
     /// 刪除文件夾（應用會回到主畫面）
     func deleteFolder(_ folder: AppFolder) {
+        let reinsertionIndex = displayItems.firstIndex {
+            if case .folder(let existingFolder) = $0 {
+                return existingFolder.id == folder.id
+            }
+            return false
+        } ?? displayItems.count
+        
         folders.removeAll { $0.id == folder.id }
-        updateDisplayItems()
+        displayItems.removeAll {
+            if case .folder(let existingFolder) = $0 {
+                return existingFolder.id == folder.id
+            }
+            return false
+        }
+        
+        var currentIndex = reinsertionIndex
+        for app in folder.apps {
+            displayItems.insert(.app(app), at: min(currentIndex, displayItems.count))
+            currentIndex += 1
+        }
+        
+        reconcileDisplayItems()
         Logger.info("Deleted folder '\(folder.name)'")
     }
     
     /// 根據 ID 查找顯示項目的索引
     func indexOfItem(withId id: UUID) -> Int? {
         displayItems.firstIndex { $0.id == id }
-    }
-    
-    /// 根據位置查找項目
-    func itemAtPosition(_ position: CGPoint, in geometry: GeometryProxy, layoutConfig: GridLayoutConfig) -> LaunchpadDisplayItem? {
-        // 計算網格位置
-        let itemWidth = GridLayoutManager.itemWidth
-        let itemHeight = GridLayoutManager.itemWidth + GridLayoutManager.labelHeight
-        let columns = layoutConfig.columns
-        
-        let gridWidth = layoutConfig.gridWidth
-        let startX = (geometry.size.width - gridWidth) / 2
-        
-        let col = Int((position.x - startX) / itemWidth)
-        let row = Int(position.y / itemHeight)
-        
-        let index = row * columns + col
-        
-        guard index >= 0, index < displayItems.count else {
-            return nil
-        }
-        
-        return displayItems[index]
     }
 }

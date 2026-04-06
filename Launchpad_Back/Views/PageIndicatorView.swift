@@ -31,9 +31,13 @@ struct PageIndicatorView: View {
     }
 }
 
-#Preview {
-    ZStack {
-        Color.black
-        PageIndicatorView(currentPage: 0, totalPages: 5) { _ in }
+#if DEBUG
+struct PageIndicatorView_Previews: PreviewProvider {
+    static var previews: some View {
+        ZStack {
+            Color.black
+            PageIndicatorView(currentPage: 0, totalPages: 5) { _ in }
+        }
     }
 }
+#endif

@@ -6,6 +6,25 @@
 //
 
 import SwiftUI
+import AppKit
+
+private struct FloatingDragState {
+    var draggingItemId: UUID?
+    var item: LaunchpadDisplayItem?
+    var location: CGPoint = .zero
+    var startedInGrid = false
+    var dropTargetId: UUID?
+    var dropTargetIndex: Int = -1
+
+    mutating func clear() {
+        draggingItemId = nil
+        item = nil
+        location = .zero
+        startedInGrid = false
+        dropTargetId = nil
+        dropTargetIndex = -1
+    }
+}
 
 struct ContentView: View {
     @StateObject private var launchpadVM = LaunchpadViewModel()
@@ -32,34 +51,23 @@ struct LaunchpadView: View {
     @State private var keyboardManager: KeyboardEventManager?
     @State private var gestureManager: GestureManager?
     @State private var expandedFolder: AppFolder?
-    @State private var screenSize: CGSize = .zero
-    @State private var draggingItemId: UUID?
-    @State private var dropTargetId: UUID?
-    @State private var dropTargetIndex: Int = -1
-    
-    // 浮動拖曳狀態（用於從文件夾拖出或跨頁拖曳）
-    @State private var floatingDragItem: LaunchpadDisplayItem?
-    @State private var floatingDragLocation: CGPoint = .zero
-    @State private var floatingDragSourcePage: Int = 0
-    @State private var floatingDragSourceIndex: Int = 0
+    @State private var showingResetConfirmation = false
+    @State private var floatingDragState = FloatingDragState()
     
     private var filteredItems: [LaunchpadDisplayItem] {
-        if searchVM.searchText.isEmpty {
-            // 無搜尋時顯示 displayItems（包含文件夾）
-            return launchpadVM.displayItems
-        } else {
-            // 搜尋時只搜尋應用
-            let uniqueApps = Dictionary(grouping: launchpadVM.apps, by: \.bundleID)
-                .compactMapValues(\.first)
-                .values
-                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            let filtered = searchVM.filterApps(Array(uniqueApps), by: searchVM.searchText)
-            return filtered.map { .app($0) }
-        }
+        launchpadVM.filteredDisplayItems(matching: searchVM.searchText)
     }
     
     private var totalPages: Int {
         paginationVM.totalPages(for: filteredItems.count)
+    }
+
+    private var renderedPageIndices: [Int] {
+        guard totalPages > 0 else { return [] }
+        
+        let lowerBound = max(0, paginationVM.currentPage - 1)
+        let upperBound = min(totalPages - 1, paginationVM.currentPage + 1)
+        return Array(lowerBound...upperBound)
     }
     
     var body: some View {
@@ -80,41 +88,18 @@ struct LaunchpadView: View {
                     
                     // 搜尋欄（編輯模式時隱藏）
                     if !editModeManager.isEditing {
-                        SearchBarView(text: $searchVM.searchText)
-                            .onChange(of: searchVM.searchText) { _, _ in
-                                paginationVM.reset()
-                                dragAmount = .zero
-                            }
+                        normalHeaderView
                         
                         Spacer().frame(height: 10)
                     } else {
-                        // 編輯模式提示
-                        HStack {
-                            Text("拖動圖標以重新排列")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.8))
-                            
-                            Spacer()
-                            
-                            Button("完成") {
-                                editModeManager.exitEditMode()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(.white.opacity(0.2)))
-                        }
-                        .padding(.horizontal, 40)
-                        .padding(.top, 5)
+                        editingHeaderView
                         
                         Spacer().frame(height: 10)
                     }
                     
                     // 應用程式網格
                     ZStack {
-                        ForEach(0..<totalPages, id: \.self) { pageIndex in
+                        ForEach(renderedPageIndices, id: \.self) { pageIndex in
                             PageViewEditable(
                                 items: paginationVM.itemsForPage(filteredItems, page: pageIndex),
                                 layoutConfig: paginationVM.layoutConfig,
@@ -123,8 +108,8 @@ struct LaunchpadView: View {
                                 screenWidth: geometry.size.width,
                                 dragAmount: editModeManager.isEditing ? .zero : dragAmount,
                                 isEditing: editModeManager.isEditing,
-                                draggingItemId: draggingItemId,
-                                dropTargetId: dropTargetId,
+                                draggingItemId: floatingDragState.draggingItemId,
+                                dropTargetId: floatingDragState.dropTargetId,
                                 onItemTap: { item in
                                     switch item {
                                     case .app(let app):
@@ -141,36 +126,25 @@ struct LaunchpadView: View {
                                 onLongPress: {
                                     editModeManager.enterEditMode()
                                 },
-                                onDragChanged: { itemId, location, appIndex in
-                                    // location 現在是全局螢幕座標（coordinateSpace: .global）
-                                    let screenLocation = location
-                                    
-                                    // 立即進入浮動拖曳模式
-                                    if floatingDragItem == nil {
-                                        if let item = filteredItems.first(where: { $0.id == itemId }) {
-                                            floatingDragItem = item
-                                            floatingDragSourcePage = paginationVM.currentPage
-                                            floatingDragSourceIndex = appIndex
-                                        }
+                                onDragChanged: { itemId, location in
+                                    if floatingDragState.item == nil,
+                                       let item = filteredItems.first(where: { $0.id == itemId }) {
+                                        floatingDragState.item = item
+                                        floatingDragState.startedInGrid = true
                                     }
-                                    
-                                    floatingDragLocation = screenLocation
-                                    draggingItemId = itemId
-                                    
-                                    // 檢測邊緣換頁
-                                    _ = checkEdgeForPageChange(screenLocation: screenLocation, geometry: geometry)
-                                    
-                                    // 計算 drop target
-                                    let result = findDropTargetByScreenLocation(at: screenLocation, excludingId: itemId, in: geometry)
-                                    dropTargetId = result.targetId
-                                    dropTargetIndex = result.targetIndex
+
+                                    floatingDragState.location = location
+                                    floatingDragState.draggingItemId = itemId
+
+                                    _ = checkEdgeForPageChange(screenLocation: location, geometry: geometry)
+
+                                    let result = findDropTargetByScreenLocation(at: location, excludingId: itemId, in: geometry)
+                                    floatingDragState.dropTargetId = result.targetId
+                                    floatingDragState.dropTargetIndex = result.targetIndex
                                 },
-                                onDragEnded: { itemId, appIndex in
+                                onDragEnded: { _ in
                                     handleFloatingDrop()
-                                    draggingItemId = nil
-                                    dropTargetId = nil
-                                    dropTargetIndex = -1
-                                    floatingDragItem = nil
+                                    floatingDragState.clear()
                                 }
                             )
                         }
@@ -225,59 +199,28 @@ struct LaunchpadView: View {
                                 expandedFolder = updatedFolder
                             }
                         },
-                        onRemoveApp: { app in
-                            launchpadVM.removeAppFromFolder(app: app, folder: folder)
-                            if let updatedFolder = launchpadVM.folders.first(where: { $0.id == folder.id }) {
-                                if updatedFolder.apps.isEmpty {
-                                    expandedFolder = nil
-                                } else {
-                                    expandedFolder = updatedFolder
-                                }
-                            } else {
-                                expandedFolder = nil
-                            }
-                        },
                         onStartDragOut: { app, screenLocation in
-                            // 從文件夾拖出 - 進入浮動拖曳模式
-                            floatingDragItem = .app(app)
-                            floatingDragLocation = screenLocation
-                            floatingDragSourcePage = paginationVM.currentPage
-                            floatingDragSourceIndex = -1  // 來自文件夾，沒有 grid index
-                            
-                            // 從文件夾中移除應用（但不插入到 displayItems，等放置時再決定位置）
+                            floatingDragState.item = .app(app)
+                            floatingDragState.location = screenLocation
+                            floatingDragState.startedInGrid = false
+
                             launchpadVM.removeAppFromFolder(app: app, folder: folder, placement: .floatingDrag)
-                            
-                            // 進入編輯模式
                             editModeManager.enterEditMode()
-                            
-                            // 計算 drop target（初始）
-                            // Note: 不關閉文件夾，讓它繼續追蹤拖曳
                         },
                         onDragOutContinue: { screenLocation in
-                            // 持續更新浮動拖曳位置
-                            floatingDragLocation = screenLocation
-                            
-                            // 檢測邊緣換頁
+                            floatingDragState.location = screenLocation
                             _ = checkEdgeForPageChange(screenLocation: screenLocation, geometry: geometry)
-                            
-                            // 計算 drop target
-                            if let item = floatingDragItem {
+
+                            if let item = floatingDragState.item {
                                 let result = findDropTargetByScreenLocation(at: screenLocation, excludingId: item.id, in: geometry)
-                                dropTargetId = result.targetId
-                                dropTargetIndex = result.targetIndex
+                                floatingDragState.dropTargetId = result.targetId
+                                floatingDragState.dropTargetIndex = result.targetIndex
                             }
                         },
                         onDragOutEnd: {
-                            // 拖曳結束 - 處理放置並關閉文件夾
                             handleFloatingDrop()
-                            
-                            // 清除狀態
-                            draggingItemId = nil
-                            dropTargetId = nil
-                            dropTargetIndex = -1
-                            floatingDragItem = nil
-                            
-                            // 關閉文件夾
+                            floatingDragState.clear()
+
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 expandedFolder = nil
                             }
@@ -288,25 +231,93 @@ struct LaunchpadView: View {
                 }
                 
                 // 浮動拖曳的 icon（跟著滑鼠）
-                if let item = floatingDragItem {
-                    floatingDragOverlay(item: item, location: floatingDragLocation, in: geometry)
+                if let item = floatingDragState.item {
+                    floatingDragOverlay(item: item, location: floatingDragState.location, in: geometry)
                 }
             }
+            .alert("重設版面？", isPresented: $showingResetConfirmation) {
+                Button("取消", role: .cancel) {}
+                Button("重設", role: .destructive) {
+                    resetLayout()
+                }
+            } message: {
+                Text("這會清除自訂排序與所有資料夾，並恢復成依名稱排序。")
+            }
             .onAppear {
-                screenSize = geometry.size
                 paginationVM.updateScreenSize(geometry.size)
                 launchpadVM.loadInstalledApps()
+                launchpadVM.updateActivePage(paginationVM.currentPage, itemsPerPage: paginationVM.appsPerPage)
                 setupEventManagers()
             }
             .onChange(of: geometry.size) { _, newSize in
-                screenSize = newSize
                 paginationVM.updateScreenSize(newSize)
                 paginationVM.validateCurrentPage(totalPages: totalPages)
+                launchpadVM.updateActivePage(paginationVM.currentPage, itemsPerPage: paginationVM.appsPerPage)
+            }
+            .onChange(of: paginationVM.currentPage) { _, newPage in
+                launchpadVM.updateActivePage(newPage, itemsPerPage: paginationVM.appsPerPage)
+            }
+            .onChange(of: totalPages) { _, _ in
+                paginationVM.validateCurrentPage(totalPages: totalPages)
+                launchpadVM.updateActivePage(paginationVM.currentPage, itemsPerPage: paginationVM.appsPerPage)
             }
             .onDisappear {
                 teardownEventManagers()
             }
         }
+    }
+
+    private var normalHeaderView: some View {
+        SearchBarView(text: $searchVM.searchText)
+            .onChange(of: searchVM.searchText) { _, _ in
+                paginationVM.reset()
+                dragAmount = .zero
+            }
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .trailing) {
+                resetLayoutButton
+                    .padding(.trailing, 40)
+            }
+    }
+
+    private var editingHeaderView: some View {
+        HStack {
+            Text("拖動圖標以重新排列")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+            
+            Spacer()
+            
+            resetLayoutButton
+            
+            Button("完成") {
+                editModeManager.exitEditMode()
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(.white.opacity(0.2)))
+        }
+        .padding(.horizontal, 40)
+        .padding(.top, 5)
+    }
+
+    private var resetLayoutButton: some View {
+        Button {
+            showingResetConfirmation = true
+        } label: {
+            Label("重設版面", systemImage: "arrow.counterclockwise")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(.white.opacity(0.16)))
+        }
+        .buttonStyle(.plain)
+        .disabled(launchpadVM.isLoading || launchpadVM.apps.isEmpty)
+        .opacity((launchpadVM.isLoading || launchpadVM.apps.isEmpty) ? 0.5 : 1)
     }
     
     // MARK: - 浮動拖曳視圖
@@ -315,23 +326,20 @@ struct LaunchpadView: View {
     private func floatingDragOverlay(item: LaunchpadDisplayItem, location: CGPoint, in geometry: GeometryProxy) -> some View {
         ZStack {
             // 顯示放置指示器（藍色）
-            if dropTargetIndex >= 0 && dropTargetId == nil {
-                screenLocationDropIndicator(at: dropTargetIndex, in: geometry)
+            if floatingDragState.dropTargetIndex >= 0 && floatingDragState.dropTargetId == nil {
+                screenLocationDropIndicator(at: floatingDragState.dropTargetIndex, in: geometry)
             }
             
             // 跟隨滑鼠的圖標
             VStack(spacing: 4) {
                 switch item {
                 case .app(let app):
-                    if let icon = app.appIcon {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .shadow(color: .black.opacity(0.5), radius: 8)
+                    CachedAppIconImage(path: app.path, appName: app.name) {
+                        IconLoadingPlaceholder(cornerRadius: 14)
                     }
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(color: .black.opacity(0.5), radius: 8)
                     Text(app.name)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white)
@@ -344,12 +352,11 @@ struct LaunchpadView: View {
                         .overlay(
                             LazyVGrid(columns: [GridItem(.fixed(16)), GridItem(.fixed(16)), GridItem(.fixed(16))], spacing: 2) {
                                 ForEach(folder.apps.prefix(9), id: \.id) { app in
-                                    if let icon = app.appIcon {
-                                        Image(nsImage: icon)
-                                            .resizable()
-                                            .frame(width: 14, height: 14)
-                                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    CachedAppIconImage(path: app.path, appName: app.name) {
+                                        IconLoadingPlaceholder(cornerRadius: 3)
                                     }
+                                    .frame(width: 14, height: 14)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
                             }
                             .padding(4)
@@ -368,10 +375,29 @@ struct LaunchpadView: View {
     // MARK: - 跨頁拖動支援
     
     // 邊緣檢測狀態
-    @State private var edgeScrollTimer: Timer?
     @State private var lastEdgeCheckTime: Date = .distantPast
     @State private var lastEdgeDirection: Int = 0  // -1: 左, 0: 無, 1: 右
     @State private var isWaitingForEdgeExit: Bool = false  // 等待離開邊緣
+
+    private func currentGridLayout(in geometry: GeometryProxy) -> GridScreenLayout {
+        let layoutConfig = paginationVM.layoutConfig
+        let topAreaHeight: CGFloat = 80
+        let bottomAreaHeight: CGFloat = 60
+        let availableHeight = geometry.size.height - topAreaHeight - bottomAreaHeight
+        let origin = CGPoint(
+            x: (geometry.size.width - layoutConfig.gridWidth) / 2,
+            y: topAreaHeight + (availableHeight - layoutConfig.gridHeight) / 2
+        )
+
+        return GridScreenLayout(
+            frame: CGRect(origin: origin, size: CGSize(width: layoutConfig.gridWidth, height: layoutConfig.gridHeight)),
+            columns: layoutConfig.columns,
+            itemWidth: GridLayoutManager.itemWidth,
+            itemHeight: GridLayoutManager.itemHeight,
+            horizontalSpacing: GridLayoutManager.horizontalSpacing,
+            verticalSpacing: GridLayoutManager.verticalSpacing
+        )
+    }
     
     /// 使用絕對螢幕位置檢測邊緣換頁
     private func checkEdgeForPageChange(screenLocation: CGPoint, geometry: GeometryProxy) -> (pageChanged: Bool, previousPage: Int) {
@@ -435,152 +461,90 @@ struct LaunchpadView: View {
     
     /// 使用絕對螢幕位置查找 drop target
     private func findDropTargetByScreenLocation(at screenLocation: CGPoint, excludingId: UUID, in geometry: GeometryProxy) -> (targetId: UUID?, targetIndex: Int) {
-        let layoutConfig = paginationVM.layoutConfig
-        let columns = layoutConfig.columns
-        let rows = layoutConfig.rows
-        
-        let gridWidth = layoutConfig.gridWidth
-        let startX = (geometry.size.width - gridWidth) / 2
-        
-        // 計算 grid 實際高度和起始 Y（考慮垂直置中）
-        let itemHeight = GridLayoutManager.itemHeight + GridLayoutManager.verticalSpacing
-        let gridHeight = CGFloat(rows) * itemHeight - GridLayoutManager.verticalSpacing
-        
-        // 頂部區域高度（搜尋欄或編輯模式頭部）約 80
-        let topAreaHeight: CGFloat = 80
-        // 底部區域高度（頁面指示器）約 60
-        let bottomAreaHeight: CGFloat = 60
-        // 可用高度
-        let availableHeight = geometry.size.height - topAreaHeight - bottomAreaHeight
-        // Grid 垂直置中後的起始 Y
-        let startY = topAreaHeight + (availableHeight - gridHeight) / 2
-        
-        let itemWidth = GridLayoutManager.itemWidth + GridLayoutManager.horizontalSpacing
-        
-        // 計算目標列和行
-        let col = Int((screenLocation.x - startX + itemWidth / 2) / itemWidth)
-        let row = Int((screenLocation.y - startY + itemHeight / 2) / itemHeight)
-        
-        guard col >= 0, col < columns, row >= 0 else {
+        let gridLayout = currentGridLayout(in: geometry)
+        let pageItems = paginationVM.itemsForPage(filteredItems, page: paginationVM.currentPage)
+
+        guard let targetIndex = gridLayout.clampedIndex(
+            at: screenLocation,
+            itemCount: pageItems.count,
+            allowsTrailingSlot: true
+        ) else {
             return (nil, -1)
         }
-        
-        let targetIndex = row * columns + col
-        let pageItems = paginationVM.itemsForPage(filteredItems, page: paginationVM.currentPage)
-        
-        guard targetIndex >= 0, targetIndex < pageItems.count else {
-            // 拖到空白區域，返回末尾位置
-            return (nil, min(targetIndex, pageItems.count))
+
+        guard targetIndex < pageItems.count else {
+            return (nil, targetIndex)
         }
-        
+
         let targetItem = pageItems[targetIndex]
-        
         guard targetItem.id != excludingId else {
             return (nil, -1)
         }
-        
-        // 計算是在圖標中心還是邊緣
-        let cellCenterX = startX + CGFloat(col) * itemWidth + itemWidth / 2
-        let cellCenterY = startY + CGFloat(row) * itemHeight + GridLayoutManager.iconSize / 2
-        
-        let distX = abs(screenLocation.x - cellCenterX)
-        let distY = abs(screenLocation.y - cellCenterY)
-        
-        // 如果在圖標中心區域（70% 範圍），視為創建文件夾
-        let centerThresholdX = itemWidth * 0.35
-        let centerThresholdY = GridLayoutManager.iconSize * 0.35
-        
-        if distX < centerThresholdX && distY < centerThresholdY {
+
+        if gridLayout.isNearItemCenter(
+            at: screenLocation,
+            index: targetIndex,
+            horizontalRatio: 0.35,
+            verticalRatio: 0.35,
+            visualHeight: GridLayoutManager.iconSize
+        ) {
             Logger.debug("findDropTargetByScreen: found target \(targetItem.name) at index \(targetIndex)")
             return (targetItem.id, targetIndex)
-        } else {
-            Logger.debug("findDropTargetByScreen: reorder to index \(targetIndex)")
-            return (nil, targetIndex)
         }
+
+        Logger.debug("findDropTargetByScreen: reorder to index \(targetIndex)")
+        return (nil, targetIndex)
     }
     
     /// 螢幕位置的放置指示器
     @ViewBuilder
     private func screenLocationDropIndicator(at index: Int, in geometry: GeometryProxy) -> some View {
-        let layoutConfig = paginationVM.layoutConfig
-        let columns = layoutConfig.columns
-        let rows = layoutConfig.rows
-        
-        let gridWidth = layoutConfig.gridWidth
-        let startX = (geometry.size.width - gridWidth) / 2
-        
-        // 計算 grid 實際高度和起始 Y（考慮垂直置中）
-        let itemHeight = GridLayoutManager.itemHeight + GridLayoutManager.verticalSpacing
-        let gridHeight = CGFloat(rows) * itemHeight - GridLayoutManager.verticalSpacing
-        
-        let topAreaHeight: CGFloat = 80
-        let bottomAreaHeight: CGFloat = 60
-        let availableHeight = geometry.size.height - topAreaHeight - bottomAreaHeight
-        let startY = topAreaHeight + (availableHeight - gridHeight) / 2
-        
-        let itemWidth = GridLayoutManager.itemWidth + GridLayoutManager.horizontalSpacing
-        
-        let col = index % columns
-        let row = index / columns
-        
-        let x = startX + CGFloat(col) * itemWidth
-        let y = startY + CGFloat(row) * itemHeight + GridLayoutManager.itemHeight / 2
+        let position = currentGridLayout(in: geometry).leadingIndicatorPosition(at: index)
         
         RoundedRectangle(cornerRadius: 2)
             .fill(Color.blue)
             .frame(width: 4, height: GridLayoutManager.itemHeight)
             .shadow(color: .blue.opacity(0.5), radius: 4)
-            .position(x: x, y: y)
+            .position(x: position.x, y: position.y)
     }
     
     /// 處理浮動拖曳放置
     private func handleFloatingDrop() {
-        guard let item = floatingDragItem else { return }
+        guard let item = floatingDragState.item else { return }
         
         let itemsPerPage = paginationVM.layoutConfig.itemsPerPage
         let pageOffset = paginationVM.currentPage * itemsPerPage
-        let sourceGlobalIndex = floatingDragSourcePage * itemsPerPage + floatingDragSourceIndex
+        let isFromGrid = floatingDragState.startedInGrid
         
-        // 檢查是否是從 displayItems 中拖出的（不是從文件夾拖出的）
-        let isFromGrid = floatingDragSourceIndex >= 0
-        
-        if let targetId = dropTargetId, let targetItem = filteredItems.first(where: { $0.id == targetId }) {
+        if let targetId = floatingDragState.dropTargetId,
+           let targetItem = filteredItems.first(where: { $0.id == targetId }) {
             // 放到目標上 - 創建文件夾或添加到文件夾
             switch (item, targetItem) {
             case (.app(let draggedApp), .app(let targetApp)):
-                if isFromGrid {
-                    // 從 grid 拖來的，需要先移除原位置
-                    launchpadVM.moveItemToCreateFolder(from: sourceGlobalIndex, targetApp: targetApp, draggedApp: draggedApp)
-                } else {
-                    _ = launchpadVM.createFolder(app1: targetApp, app2: draggedApp)
-                }
+                _ = launchpadVM.createFolder(app1: targetApp, app2: draggedApp)
                 Logger.info("Created folder with \(draggedApp.name) and \(targetApp.name)")
             case (.app(let draggedApp), .folder(let targetFolder)):
-                if isFromGrid {
-                    launchpadVM.moveItemToFolder(from: sourceGlobalIndex, folder: targetFolder)
-                } else {
-                    launchpadVM.addAppToFolder(app: draggedApp, folder: targetFolder)
-                }
+                launchpadVM.addAppToFolder(app: draggedApp, folder: targetFolder)
                 Logger.info("Added \(draggedApp.name) to folder '\(targetFolder.name)'")
             case (.folder(_), .app(_)):
                 // 文件夾拖到應用上 - 只做重新排序
-                if isFromGrid && dropTargetIndex >= 0 {
-                    let targetGlobalIndex = pageOffset + dropTargetIndex
-                    launchpadVM.moveItem(from: sourceGlobalIndex, to: targetGlobalIndex)
+                if isFromGrid && floatingDragState.dropTargetIndex >= 0 {
+                    let targetGlobalIndex = pageOffset + floatingDragState.dropTargetIndex
+                    launchpadVM.moveItem(withId: item.id, to: targetGlobalIndex)
                 }
             case (.folder(_), .folder(_)):
                 // 文件夾拖到文件夾上 - 只做重新排序
-                if isFromGrid && dropTargetIndex >= 0 {
-                    let targetGlobalIndex = pageOffset + dropTargetIndex
-                    launchpadVM.moveItem(from: sourceGlobalIndex, to: targetGlobalIndex)
+                if isFromGrid && floatingDragState.dropTargetIndex >= 0 {
+                    let targetGlobalIndex = pageOffset + floatingDragState.dropTargetIndex
+                    launchpadVM.moveItem(withId: item.id, to: targetGlobalIndex)
                 }
             }
-        } else if dropTargetIndex >= 0 {
+        } else if floatingDragState.dropTargetIndex >= 0 {
             // 放到空位 - 重新排序
-            let targetGlobalIndex = pageOffset + dropTargetIndex
+            let targetGlobalIndex = pageOffset + floatingDragState.dropTargetIndex
             if isFromGrid {
-                launchpadVM.moveItem(from: sourceGlobalIndex, to: targetGlobalIndex)
-                Logger.info("Moved item from \(sourceGlobalIndex) to \(targetGlobalIndex)")
+                launchpadVM.moveItem(withId: item.id, to: targetGlobalIndex)
+                Logger.info("Moved item \(item.id) to \(targetGlobalIndex)")
             } else {
                 // 從文件夾拖出來的
                 if case .app(let app) = item {
@@ -597,12 +561,8 @@ struct LaunchpadView: View {
                 }
             }
         }
-        
-        // 清除狀態
-        floatingDragItem = nil
-        floatingDragLocation = .zero
-        dropTargetId = nil
-        dropTargetIndex = -1
+
+        floatingDragState.clear()
     }
     
     // MARK: - Private Methods
@@ -622,10 +582,7 @@ struct LaunchpadView: View {
                   let launchpadVM = launchpadVM,
                   let searchVM = searchVM else { return }
             
-            let uniqueApps = Dictionary(grouping: launchpadVM.apps, by: \.bundleID)
-                .compactMapValues(\.first)
-                .values
-            let filteredCount = searchVM.filterApps(Array(uniqueApps), by: searchVM.searchText).count
+            let filteredCount = launchpadVM.filteredDisplayItems(matching: searchVM.searchText).count
             let totalPages = paginationVM.totalPages(for: filteredCount)
             
             Logger.debug("Page change requested: direction=\(direction), currentPage=\(paginationVM.currentPage), totalPages=\(totalPages)")
@@ -677,11 +634,31 @@ struct LaunchpadView: View {
     }
     
     private func hideWindow() {
-        NSApplication.shared.keyWindow?.orderOut(nil)
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.hideMainWindow()
+        } else {
+            NSApplication.shared.keyWindow?.orderOut(nil)
+        }
     }
     
     private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    private func resetLayout() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            expandedFolder = nil
+        }
+        clearFloatingDragState()
+        dragAmount = .zero
+        searchVM.clearSearch()
+        paginationVM.reset()
+        editModeManager.exitEditMode()
+        launchpadVM.resetLayout()
+    }
+
+    private func clearFloatingDragState() {
+        floatingDragState.clear()
     }
 }
 
@@ -699,8 +676,8 @@ struct PageViewEditable: View {
     let dropTargetId: UUID?
     let onItemTap: (LaunchpadDisplayItem) -> Void
     let onLongPress: () -> Void
-    let onDragChanged: (UUID, CGPoint, Int) -> Void
-    let onDragEnded: (UUID, Int) -> Void
+    let onDragChanged: (UUID, CGPoint) -> Void
+    let onDragEnded: (UUID) -> Void
     
     var body: some View {
         VStack {
@@ -708,7 +685,7 @@ struct PageViewEditable: View {
             Spacer().frame(minHeight: 0, maxHeight: 10)
             
             LazyVGrid(columns: layoutConfig.gridColumns, spacing: GridLayoutManager.verticalSpacing) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                ForEach(items, id: \.id) { item in
                     LaunchpadItemView(
                         item: item,
                         onAppTap: { app in onItemTap(.app(app)) },
@@ -718,10 +695,10 @@ struct PageViewEditable: View {
                         isDropTarget: dropTargetId == item.id,
                         onLongPress: onLongPress,
                         onDragChanged: { location in
-                            onDragChanged(item.id, location, index)
+                            onDragChanged(item.id, location)
                         },
                         onDragEnded: {
-                            onDragEnded(item.id, index)
+                            onDragEnded(item.id)
                         }
                     )
                 }
@@ -744,6 +721,10 @@ struct PageViewEditable: View {
     }
 }
 
-#Preview {
-    ContentView()
+#if DEBUG
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
+#endif

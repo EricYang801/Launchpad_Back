@@ -10,7 +10,7 @@ import Combine
 
 /// 分頁管理的 ViewModel
 /// 負責頁面導航和分頁邏輯
-class PaginationViewModel: ObservableObject {
+final class PaginationViewModel: ObservableObject {
     @Published var currentPage = 0
     @Published private(set) var screenSize: CGSize = .zero
     
@@ -58,21 +58,8 @@ class PaginationViewModel: ObservableObject {
         return max(1, Int(ceil(Double(itemCount) / Double(appsPerPage))))
     }
     
-    /// 獲取指定頁面的應用程式
-    /// - Parameters:
-    ///   - apps: 應用程式陣列
-    ///   - page: 頁面索引
-    /// - Returns: 該頁面的應用程式
-    func appsForPage(_ apps: [AppItem], page: Int) -> [AppItem] {
-        let startIndex = page * appsPerPage
-        let endIndex = min(startIndex + appsPerPage, apps.count)
-        
-        guard startIndex < apps.count else { return [] }
-        return Array(apps[startIndex..<endIndex])
-    }
-    
-    /// 獲取指定頁面的項目（支持文件夾）
-    func itemsForPage(_ items: [LaunchpadDisplayItem], page: Int) -> [LaunchpadDisplayItem] {
+    /// 獲取指定頁面的項目
+    func itemsForPage<Item>(_ items: [Item], page: Int) -> [Item] {
         let startIndex = page * appsPerPage
         let endIndex = min(startIndex + appsPerPage, items.count)
         

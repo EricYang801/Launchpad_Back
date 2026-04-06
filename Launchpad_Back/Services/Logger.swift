@@ -17,6 +17,7 @@ enum LogLevel: String {
 
 /// 簡單的日誌系統
 struct Logger {
+    private static let lock = NSLock()
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
@@ -51,6 +52,8 @@ struct Logger {
     
     private static func log(_ message: String, level: LogLevel, file: String, line: Int) {
         #if DEBUG
+        lock.lock()
+        defer { lock.unlock() }
         let fileName = URL(fileURLWithPath: file).lastPathComponent
         let timestamp = dateFormatter.string(from: Date())
         print("[\(timestamp)] \(level.rawValue) [\(fileName):\(line)] \(message)")
