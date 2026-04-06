@@ -60,7 +60,11 @@ struct CachedAppIconImage<Placeholder: View>: View {
     @ViewBuilder let placeholder: () -> Placeholder
     
     @State private var icon: NSImage?
-    @State private var requestedPath = ""
+    @State private var requestedID = ""
+    
+    private var taskID: String {
+        "\(path)\u{0}\(appName ?? "")"
+    }
     
     var body: some View {
         Group {
@@ -73,26 +77,26 @@ struct CachedAppIconImage<Placeholder: View>: View {
                 placeholder()
             }
         }
-        .task(id: path) {
+        .task(id: taskID) {
             loadIcon()
         }
         .onDisappear {
-            requestedPath = ""
+            requestedID = ""
             icon = nil
         }
     }
     
     private func loadIcon() {
-        requestedPath = path
+        requestedID = taskID
         
-        if let cachedIcon = AppIconCache.shared.cachedIcon(for: path, appName: appName) {
+        if let cachedIcon = AppIconCache.shared.cachedIcon(for: path) {
             icon = cachedIcon
             return
         }
         
         icon = nil
         AppIconCache.shared.getIconAsync(for: path, appName: appName) { loadedIcon in
-            guard requestedPath == path else { return }
+            guard requestedID == taskID else { return }
             icon = loadedIcon
         }
     }

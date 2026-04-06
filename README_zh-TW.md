@@ -1,6 +1,6 @@
 # Launchpad_Back
 
-> 一個用 SwiftUI 製作、在現代 macOS 上取代 Launchpad 的啟動器。
+> 用 SwiftUI + AppKit 打造的 macOS Launchpad 替代方案（macOS 15.6+）。
 
 <div align="center">
   <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="下載次數" />
@@ -8,49 +8,74 @@
 
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
 
+如果你在找「macOS Tahoe 的 Launchpad 替代品」，這個專案就是為那個場景做的：全域快捷鍵呼叫、分頁網格、資料夾整理、拖曳排序與本地搜尋。
+
 ## 畫面演示
 ![主介面](./Example.png)
 
-## 概述
+## 搜尋關鍵詞
 
-Launchpad_Back 是一個為 macOS 15.6 以上版本打造的 Launchpad 替代方案。它會掃描常見應用程式目錄，將 App 顯示成可分頁的網格，支援資料夾、拖曳排序、全域快捷鍵，以及類似原生 Launchpad 的浮動視窗體驗。
+Launchpad 替代, macOS app launcher, SwiftUI 啟動器, AppKit launcher, 全域快捷鍵啟動器, macOS Tahoe Launchpad replacement, Homebrew Cask 掃描
 
-Apple 在 macOS 26 Tahoe 移除了 Launchpad，這個專案就是為了把那套工作流帶回來，同時保留 SwiftUI + AppKit 的原生整合。
+## 目前功能（依現行程式碼）
 
-## 主要功能
+- 浮動視窗啟動器，可用全域 `Cmd + L` 切換顯示
+- 響應式分頁網格（動態 5-9 欄、3-7 列）
+- 支援拖曳排序、資料夾建立/重新命名、從展開資料夾拖出 App
+- 搜尋會比對 App 名稱、bundle ID、安裝路徑（不分大小寫）
+- 掃描系統、使用者與 Homebrew 常見安裝位置
+- 圖示流程包含 workspace icon、metadata fallback 與自動 fallback icon
 
-- **應用程式掃描**
-  - 掃描 `/Applications`
-  - 掃描 `/System/Applications`
-  - 掃描 `/System/Applications/Utilities`
-  - 掃描使用者 Applications 目錄
-  - 遞迴掃描 `/opt/homebrew/Caskroom` 內的 Homebrew Cask 安裝
+## 操作鍵與手勢
 
-- **Launchpad 式瀏覽**
-  - 自動分頁的網格排列
-  - 滑鼠拖曳與方向鍵翻頁
-  - 由事件管理層處理的觸控板手勢
-  - 即時搜尋與篩選
+| 輸入 | 行為 |
+| --- | --- |
+| `Cmd + L` | 全域切換啟動器顯示/隱藏 |
+| `Cmd + W` | 隱藏視窗 |
+| `Cmd + Q` | 結束程式 |
+| `Esc` | 依序：退出編輯模式 -> 關閉資料夾 -> 清空搜尋 -> 隱藏視窗 |
+| `Left` / `Up` | 上一頁 |
+| `Right` / `Down` | 下一頁 |
+| 觸控板捲動手勢 | 依閾值與冷卻時間切頁 |
+| 滑鼠滾輪 | 依 notch 累積與防抖切頁 |
 
-- **整理與編輯**
-  - 拖曳重新排序
-  - 把 App 拖到另一個 App 上可建立資料夾
-  - 把 App 拖到資料夾上可加入資料夾
-  - 在展開資料夾中重新排序內容
-  - 從展開資料夾拖出 App 可移出資料夾
-  - 提供重設版面按鈕，可清除資料夾並恢復依名稱排序
+## 應用掃描路徑
 
-- **視窗與快捷鍵**
-  - 全域 `Cmd + L` 切換顯示
-  - `Cmd + W` 隱藏視窗
-  - `Cmd + Q` 結束程式
-  - `Esc` 依情境清除搜尋、關閉資料夾、退出編輯或隱藏視窗
+| 路徑 | 是否遞迴 |
+| --- | --- |
+| `/System/Applications` | 否 |
+| `/System/Applications/Utilities` | 否 |
+| `/Applications` | 否 |
+| `/Applications/Utilities` | 否 |
+| `~/Applications` | 否 |
+| `/opt/homebrew/Caskroom` | 是 |
 
-- **圖示處理流程**
-  - 先解析 symlink 後再載入 App bundle 圖示
-  - 若 `NSWorkspace` 只給 generic app icon，會再讀 bundle metadata
-  - 若 bundle 本身沒有可用圖示，會自動產生 initials fallback icon
-  - 使用非同步快取讓分頁、拖曳與資料夾預覽保持順暢
+掃描器也會過濾一批隱藏/背景系統 App，並用穩定識別鍵去重（優先 `bundleID`，沒有時退回路徑）。
+
+## 資料夾與版面邏輯
+
+- 長按圖示進入編輯模式
+- App 拖到 App 上可建立資料夾（預設名 `New Folder`）
+- App 拖到資料夾上可加入資料夾
+- 展開資料夾後可重命名、可重排內部項目
+- 從展開資料夾拖出 App 可移出資料夾
+- 若資料夾剩 1 個 App，資料夾會自動解散
+- 重設版面會清除自訂排序與資料夾，回到依名稱排序
+
+## 圖示處理流程
+
+- 先解析 symlink / canonical bundle path
+- 若 `NSWorkspace` 回傳的不是 generic icon，直接使用
+- 若是 generic icon，改讀 bundle metadata（`CFBundleIconFile`、`CFBundleIconName` 等）
+- metadata 仍找不到時，生成一致性的 initials fallback icon
+- 使用非同步快取與相鄰頁面預載，降低翻頁和拖曳卡頓
+
+## 持久化儲存
+
+Launchpad_Back 會把版面狀態存到 `UserDefaults`：
+
+- `launchpad_item_order`
+- `launchpad_folders`
 
 ## 專案結構
 
@@ -83,36 +108,14 @@ Launchpad_Back/
 └── Assets.xcassets/
 ```
 
-## 核心元件
-
-- **`LaunchpadViewModel`**
-  - 管理掃描到的 App、資料夾與顯示順序
-  - 用 `UserDefaults` 持久化排序與資料夾
-  - 預載入相鄰頁面的 icon
-
-- **`AppScannerService`**
-  - 從系統、使用者與 Homebrew 位置掃描 `.app`
-  - 從 `Info.plist` 讀取顯示名稱與 bundle identifier
-  - 用穩定識別鍵去重
-
-- **`AppIconResolver`**
-  - 解析 canonical bundle path
-  - 偵測 generic `NSWorkspace` icon
-  - 讀取 `CFBundleIconFile`、`CFBundleIconName` 等 icon metadata
-  - 在沒有可用圖示時生成 fallback icon
-
-- **`AppIconCache`**
-  - 以解析後的 bundle path 做快取鍵
-  - 非同步載入主畫面、資料夾預覽與拖曳浮層圖示
-
 ## 系統需求
 
 - macOS 15.6 或以上
-- Xcode 17 或以上
+- Xcode 26.0 或以上
 
 ## 編譯
 
-1. 複製專案：
+1. 下載專案：
 
    ```bash
    git clone https://github.com/EricYang801/Launchpad_Back.git
@@ -126,10 +129,11 @@ Launchpad_Back/
    ```
 
 3. 執行：
-  - 選擇 `My Mac`
-  - 按 `Cmd + R`
 
-也可以直接在 Terminal 編譯：
+- 選擇 `My Mac`
+- 按 `Cmd + R`
+
+也可以用 Terminal 編譯：
 
 ```bash
 xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
@@ -143,41 +147,15 @@ xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
 xcodebuild test -scheme Launchpad_Back -destination 'platform=macOS' -only-testing:Launchpad_BackTests
 ```
 
-目前測試涵蓋：
-- 直接 bundle path 的 icon 解析
-- symlink bundle 的 icon 解析
-- metadata icon fallback
-- 自動生成 fallback icon
-- canonical bundle path 的 cache reuse
-- 資料夾建立與還原
-- 重設版面
-- 搜尋與分頁
+目前測試包含：
 
-## 使用方式
-
-### 基本流程
-
-1. 按 `Cmd + L` 顯示或隱藏啟動器。
-2. 點一下 App 圖示即可啟動。
-3. 在搜尋列輸入文字即可過濾 App。
-4. 使用方向鍵或拖曳手勢切換頁面。
-
-### 編輯與資料夾
-
-1. 長按任一項目進入編輯模式。
-2. 把 App 拖到另一個 App 上建立資料夾。
-3. 把 App 拖到現有資料夾上加入資料夾。
-4. 打開資料夾後可以重新命名或調整內容順序。
-5. 從展開資料夾把 App 拖出即可移出資料夾。
-6. 使用重設版面按鈕可清除資料夾並恢復依名稱排序。
-
-## 補充說明
-
-- App identity 以 `bundleID` 為主，沒有 `bundleID` 的 App 會退回使用安裝路徑。
-- 排序與資料夾配置會儲存在：
-  - `launchpad_item_order`
-  - `launchpad_folders`
-- 若某些 App 最終仍只暴露 generic icon，Launchpad_Back 會顯示一致的 fallback icon，而不是虛線 placeholder。
+- icon 解析（直接路徑、symlink、metadata fallback、自動 fallback）
+- icon cache（canonical path 重用、並發安全、in-flight async 併單）
+- 資料夾建立/加入/移除/刪除與排序還原
+- 重設版面行為
+- 搜尋比對（名稱、bundle ID、路徑）
+- 分頁切片、邊界檢查與頁碼修正
+- `SearchViewModel` 基本行為
 
 ## 授權
 

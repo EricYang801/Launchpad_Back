@@ -1,6 +1,6 @@
 # Launchpad_Back
 
-> A SwiftUI-based replacement for Launchpad on modern macOS.
+> A native Launchpad replacement for macOS 15.6+, built with SwiftUI + AppKit.
 
 <div align="center">
   <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="Downloads" />
@@ -8,49 +8,74 @@
 
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
 
+Looking for a Launchpad alternative on macOS Tahoe? This project focuses on exactly that: a launcher with global hotkey toggle, paged app grid, folder management, drag sorting, and fast local search.
+
 ## Demo
 ![Main Interface](./Example.png)
 
-## Overview
+## Search Keywords
 
-Launchpad_Back recreates a Launchpad-style app launcher for macOS 15.6 and later. It scans common application locations, presents apps in a paged grid, supports folders and drag reordering, and runs as a floating window that can be toggled globally with `Cmd + L`.
+Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, global hotkey launcher, macOS Tahoe Launchpad replacement, Homebrew Cask app scanner
 
-This project exists because Apple removed Launchpad in macOS 26 Tahoe. Launchpad_Back keeps the familiar workflow while staying native to SwiftUI and AppKit.
+## What It Does (Aligned With Current Code)
 
-## Features
+- Runs in a floating launcher window and can be toggled globally with `Cmd + L`
+- Uses a responsive grid with dynamic rows/columns (5-9 columns, 3-7 rows)
+- Supports drag reorder, folders, folder rename, and drag-out from expanded folders
+- Searches by app name, bundle ID, and app path (case-insensitive)
+- Scans system, user, and Homebrew app locations
+- Resolves app icons through workspace icon, metadata fallback, and generated fallback icon
 
-- **App discovery**
-  - Scans `/Applications`
-  - Scans `/System/Applications`
-  - Scans `/System/Applications/Utilities`
-  - Scans the user Applications directory
-  - Recursively scans Homebrew Cask installs under `/opt/homebrew/Caskroom`
+## Controls
 
-- **Launchpad-style navigation**
-  - Responsive paged grid layout
-  - Mouse drag and arrow-key pagination
-  - Trackpad gesture handling through the event manager layer
-  - Search with instant filtering
+| Input | Behavior |
+| --- | --- |
+| `Cmd + L` | Toggle launcher visibility globally |
+| `Cmd + W` | Hide launcher window |
+| `Cmd + Q` | Quit app |
+| `Esc` | Exit edit mode -> close folder -> clear search -> hide window |
+| `Left` / `Up` | Previous page |
+| `Right` / `Down` | Next page |
+| Trackpad scroll gesture | Page switch with threshold and cooldown |
+| Mouse wheel | Page switch with notch accumulation + debounce |
 
-- **Organization**
-  - Drag apps to reorder
-  - Drag app onto app to create a folder
-  - Drag app onto folder to add it
-  - Reorder apps inside expanded folders
-  - Remove apps from folders by dragging them out
-  - Reset layout button to restore alphabetical order and clear folders
+## App Discovery Paths
 
-- **Window and shortcuts**
-  - Global `Cmd + L` to toggle visibility
-  - `Cmd + W` to hide the window
-  - `Cmd + Q` to quit
-  - `Esc` to clear search, close folder, exit edit mode, or hide window
+| Path | Recursive |
+| --- | --- |
+| `/System/Applications` | No |
+| `/System/Applications/Utilities` | No |
+| `/Applications` | No |
+| `/Applications/Utilities` | No |
+| `~/Applications` | No |
+| `/opt/homebrew/Caskroom` | Yes |
 
-- **Icon pipeline**
-  - Resolves symlinked app bundles before loading icons
-  - Falls back to bundle metadata lookup when `NSWorkspace` only returns a generic app icon
-  - Generates a custom initials-based icon when no usable bundle icon exists
-  - Uses async caching to keep scrolling and drag interactions smooth
+The scanner also filters a set of hidden/background system apps and deduplicates apps using a stable identifier (`bundleID`, or path when `bundleID` is missing).
+
+## Folder and Layout Behavior
+
+- Long press any icon to enter edit mode
+- Drag app onto app to create a folder (`New Folder` by default)
+- Drag app onto folder to add it
+- Reorder apps inside an expanded folder
+- Drag app out of expanded folder to remove it
+- Folder is removed automatically if only one app remains
+- Reset layout clears saved custom order and folders, then restores alphabetical order
+
+## Icon Pipeline
+
+- Resolve symlink/canonical bundle path first
+- Use `NSWorkspace` icon if it is not the generic app icon
+- If generic icon is returned, load icon from bundle metadata (`CFBundleIconFile`, `CFBundleIconName`, etc.)
+- If metadata icon is still unavailable, generate a consistent initials-based fallback icon
+- Cache resized icons asynchronously and preload adjacent pages for smoother pagination
+
+## Persistence
+
+Launchpad_Back stores layout state in `UserDefaults`:
+
+- `launchpad_item_order`
+- `launchpad_folders`
 
 ## Project Structure
 
@@ -83,32 +108,10 @@ Launchpad_Back/
 └── Assets.xcassets/
 ```
 
-## Key Components
-
-- **`LaunchpadViewModel`**
-  - Owns scanned apps, folders, and display order
-  - Persists order and folder structure in `UserDefaults`
-  - Preloads adjacent-page icons for smoother page changes
-
-- **`AppScannerService`**
-  - Scans app bundles from system, user, and Homebrew locations
-  - Extracts display name and bundle identifier from `Info.plist`
-  - Deduplicates apps with a stable identifier
-
-- **`AppIconResolver`**
-  - Resolves canonical bundle paths
-  - Detects generic `NSWorkspace` icons
-  - Loads `CFBundleIconFile`, `CFBundleIconName`, and related metadata resources
-  - Generates fallback icons for apps with no usable bundle image
-
-- **`AppIconCache`**
-  - Caches resized `NSImage` instances by resolved bundle path
-  - Loads icons asynchronously for grid, folder preview, and floating drag overlays
-
 ## Requirements
 
 - macOS 15.6 or later
-- Xcode 17 or later
+- Xcode 26.0 or later
 
 ## Build
 
@@ -119,17 +122,18 @@ Launchpad_Back/
    cd Launchpad_Back
    ```
 
-2. Open the project in Xcode:
+2. Open in Xcode:
 
    ```bash
    open Launchpad_Back.xcodeproj
    ```
 
 3. Build and run:
-  - Select `My Mac`
-  - Press `Cmd + R`
 
-You can also build from Terminal:
+- Select `My Mac`
+- Press `Cmd + R`
+
+Or build from Terminal:
 
 ```bash
 xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
@@ -137,47 +141,21 @@ xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
 
 ## Tests
 
-Run the unit test target with:
+Run unit tests:
 
 ```bash
 xcodebuild test -scheme Launchpad_Back -destination 'platform=macOS' -only-testing:Launchpad_BackTests
 ```
 
-Current tests cover:
-- icon resolution for direct bundles
-- icon resolution for symlinked bundles
-- metadata icon fallback
-- generated fallback icons
-- cache reuse for canonical bundle paths
-- folder creation and restoration
-- reset layout
-- search and pagination
+Current test suite covers:
 
-## Usage
-
-### Basic flow
-
-1. Press `Cmd + L` to show or hide the launcher.
-2. Click an app to launch it.
-3. Type in the search bar to filter apps.
-4. Use the arrow keys or drag gesture to switch pages.
-
-### Editing and folders
-
-1. Long press an item to enter edit mode.
-2. Drag an app onto another app to create a folder.
-3. Drag an app onto an existing folder to insert it.
-4. Open a folder to rename it or reorder its contents.
-5. Drag an app out of an expanded folder to remove it.
-6. Use the reset layout button to clear folders and restore alphabetical order.
-
-## Notes
-
-- App identity is based on `bundleID`, with install path used as fallback for apps that do not provide one.
-- Folder and item order are persisted with:
-  - `launchpad_item_order`
-  - `launchpad_folders`
-- If an app bundle still exposes only a generic icon, Launchpad_Back now generates a consistent fallback icon instead of showing a dashed placeholder.
+- icon resolution for direct path, symlink path, metadata fallback, and generated fallback icons
+- icon cache behavior for canonical paths, concurrent requests, and in-flight async request joining
+- folder creation/add/remove/delete and saved-order restore
+- reset layout behavior
+- search matching by app name, bundle ID, and path
+- pagination slicing, bounds checks, and page validation
+- basic `SearchViewModel` behavior
 
 ## License
 

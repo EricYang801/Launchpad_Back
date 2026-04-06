@@ -586,13 +586,11 @@ struct LaunchpadView: View {
             let totalPages = paginationVM.totalPages(for: filteredCount)
             
             Logger.debug("Page change requested: direction=\(direction), currentPage=\(paginationVM.currentPage), totalPages=\(totalPages)")
-            
-            DispatchQueue.main.async {
-                if direction > 0 {
-                    paginationVM.nextPage(totalPages: totalPages)
-                } else {
-                    paginationVM.previousPage()
-                }
+
+            if direction > 0 {
+                paginationVM.nextPage(totalPages: totalPages)
+            } else {
+                paginationVM.previousPage()
             }
         }
         gestureManager?.startListening()
