@@ -801,8 +801,6 @@ struct PageViewEditable: View {
             x: CGFloat(pageIndex - currentPage) * screenWidth + dragAmount.width,
             y: 0
         )
-        .opacity(pageIndex == currentPage ? 1.0 : 0.6)
-        .scaleEffect(pageIndex == currentPage ? 1.0 : 0.92)
         // 在拖曳過程中，保持原頁面可以接收手勢
         .allowsHitTesting(pageIndex == currentPage || draggingItemId != nil)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentPage)
