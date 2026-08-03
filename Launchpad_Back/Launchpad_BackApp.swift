@@ -9,6 +9,13 @@ import SwiftUI
 import AppKit
 import Carbon
 
+extension Notification.Name {
+    /// 視窗即將以動畫顯示，SwiftUI 內容應執行縮放淡入
+    static let launchpadWillShow = Notification.Name("LaunchpadWillShow")
+    /// 視窗即將以動畫隱藏，SwiftUI 內容應執行縮放淡出
+    static let launchpadWillHide = Notification.Name("LaunchpadWillHide")
+}
+
 @main
 struct Launchpad_BackApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -50,6 +57,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let globalHotKeyID: UInt32 = 1
     
     private var mainWindow: NSWindow?
+
+    // MARK: - 開關動畫狀態
+    private let showAnimationDuration: TimeInterval = 0.22
+    private let hideAnimationDuration: TimeInterval = 0.18
+    private var isHidingAnimated = false
+    private var hideGeneration = 0
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.info("Application did finish launching")
         createMainWindowIfNeeded()
@@ -108,14 +122,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func hideMainWindow() {
+        hideMainWindow(animated: true)
+    }
+
+    func hideMainWindow(animated: Bool) {
         guard let window = mainWindow else {
             Logger.warning("No main window found")
             return
         }
-        
-        window.orderOut(nil)
-        logWindowState(window, context: "hide")
-        Logger.info("Window hidden")
+
+        guard window.isVisible else { return }
+
+        guard animated else {
+            isHidingAnimated = false
+            hideGeneration &+= 1
+            window.orderOut(nil)
+            window.alphaValue = 1
+            logWindowState(window, context: "hide")
+            Logger.info("Window hidden")
+            return
+        }
+
+        // 已經在做隱藏動畫就不重複觸發
+        guard !isHidingAnimated else { return }
+
+        isHidingAnimated = true
+        hideGeneration &+= 1
+        let generation = hideGeneration
+
+        NotificationCenter.default.post(name: .launchpadWillHide, object: nil)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = hideAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            window.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            // 動畫途中若又被叫出視窗，generation 會不同，此時放棄隱藏
+            guard self.isHidingAnimated, generation == self.hideGeneration else { return }
+
+            self.isHidingAnimated = false
+            window.orderOut(nil)
+            window.alphaValue = 1
+            self.logWindowState(window, context: "hide")
+            Logger.info("Window hidden")
+        })
     }
 
     func closeMainWindow() {
@@ -129,38 +180,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func showMainWindow() {
         createMainWindowIfNeeded()
-        
+
         guard let window = mainWindow else {
             Logger.warning("No main window found")
             return
         }
-        
+
         configureMainWindow(window)
         ensureWindowIsOnScreen(window)
-        
+
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
-        
+
+        // 視窗尚未顯示（或正在做隱藏動畫）才需要播放顯示動畫
+        let needsShowAnimation = !window.isVisible || isHidingAnimated
+
+        // 取消進行中的隱藏動畫
+        isHidingAnimated = false
+        hideGeneration &+= 1
+
+        if needsShowAnimation {
+            window.alphaValue = 0
+        }
+
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.unhide(nil)
         NSRunningApplication.current.activate(options: [.activateAllWindows])
         window.orderFrontRegardless()
         window.makeKeyAndOrderFront(nil)
-        
+
+        if needsShowAnimation {
+            NotificationCenter.default.post(name: .launchpadWillShow, object: nil)
+
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = showAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                window.animator().alphaValue = 1
+            }
+        } else {
+            window.alphaValue = 1
+        }
+
         logWindowState(window, context: "show")
         Logger.info("Window shown")
     }
-    
+
     func toggleMainWindowVisibility() {
         guard let window = mainWindow else {
             showMainWindow()
             return
         }
-        
+
         logWindowState(window, context: "toggle")
-        
-        if shouldHideWindow(window) {
+
+        // 隱藏動畫進行中視為「已隱藏」，再按快捷鍵應該重新叫出
+        if isHidingAnimated {
+            showMainWindow()
+        } else if shouldHideWindow(window) {
             hideMainWindow()
         } else {
             showMainWindow()
