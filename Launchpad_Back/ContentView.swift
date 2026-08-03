@@ -53,6 +53,10 @@ struct LaunchpadView: View {
     @State private var expandedFolder: AppFolder?
     @State private var showingResetConfirmation = false
     @State private var floatingDragState = FloatingDragState()
+
+    // 開關動畫（模仿原版 Launchpad 的縮放淡入淡出）
+    @State private var contentScale: CGFloat = 1.0
+    @State private var contentOpacity: Double = 1.0
     
     private var filteredItems: [LaunchpadDisplayItem] {
         launchpadVM.filteredDisplayItems(matching: searchVM.searchText)
@@ -115,6 +119,7 @@ struct LaunchpadView: View {
                                     case .app(let app):
                                         if !editModeManager.isEditing {
                                             launchpadVM.launchApp(app)
+                                            hideWindow()
                                         }
                                     case .folder(let folder):
                                         // 編輯模式下也可以進入資料夾
@@ -173,7 +178,9 @@ struct LaunchpadView: View {
                         Spacer().frame(height: 6)
                     }
                 }
-                
+                .scaleEffect(contentScale)
+                .opacity(contentOpacity)
+
                 // 展開的文件夾視圖
                 if let folder = expandedFolder {
                     FolderExpandedView(
@@ -181,6 +188,7 @@ struct LaunchpadView: View {
                         onAppTap: { app in
                             expandedFolder = nil
                             launchpadVM.launchApp(app)
+                            hideWindow()
                         },
                         onClose: {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -228,6 +236,8 @@ struct LaunchpadView: View {
                         initialEditingMode: editModeManager.isEditing
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .scaleEffect(contentScale)
+                    .opacity(contentOpacity)
                 }
                 
                 // 浮動拖曳的 icon（跟著滑鼠）
@@ -264,6 +274,44 @@ struct LaunchpadView: View {
             .onDisappear {
                 teardownEventManagers()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .launchpadWillShow)) { _ in
+                handleWillShow()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .launchpadWillHide)) { _ in
+                handleWillHide()
+            }
+        }
+    }
+
+    // MARK: - 開關動畫
+
+    /// 顯示動畫：從放大狀態縮回原尺寸並淡入（模仿原版 Launchpad）
+    private func handleWillShow() {
+        // 重新叫出時回到乾淨狀態：關閉資料夾、清除搜尋、退出編輯模式
+        withAnimation(nil) {
+            expandedFolder = nil
+            floatingDragState.clear()
+            dragAmount = .zero
+            editModeManager.exitEditMode()
+            searchVM.clearSearch()
+
+            contentScale = 1.18
+            contentOpacity = 0
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) {
+                contentScale = 1.0
+                contentOpacity = 1.0
+            }
+        }
+    }
+
+    /// 隱藏動畫：向使用者方向放大並淡出（模仿原版啟動 app 時的效果）
+    private func handleWillHide() {
+        withAnimation(.easeIn(duration: 0.18)) {
+            contentScale = 1.12
+            contentOpacity = 0
         }
     }
 
