@@ -57,6 +57,9 @@ struct LaunchpadView: View {
     // 開關動畫（模仿原版 Launchpad 的縮放淡入淡出）
     @State private var contentScale: CGFloat = 1.0
     @State private var contentOpacity: Double = 1.0
+
+    // 搜尋欄焦點（支援「打字即搜尋」）
+    @FocusState private var searchFieldFocused: Bool
     
     private var filteredItems: [LaunchpadDisplayItem] {
         launchpadVM.filteredDisplayItems(matching: searchVM.searchText)
@@ -258,6 +261,7 @@ struct LaunchpadView: View {
                 launchpadVM.loadInstalledApps()
                 launchpadVM.updateActivePage(paginationVM.currentPage, itemsPerPage: paginationVM.appsPerPage)
                 setupEventManagers()
+                searchFieldFocused = true
             }
             .onChange(of: geometry.size) { _, newSize in
                 paginationVM.updateScreenSize(newSize)
@@ -304,7 +308,23 @@ struct LaunchpadView: View {
                 contentScale = 1.0
                 contentOpacity = 1.0
             }
+            searchFieldFocused = true
         }
+    }
+
+    /// 啟動搜尋結果中的第一個 app（Return 鍵）
+    private func launchFirstSearchResult() -> Bool {
+        guard !searchVM.searchText.isEmpty else { return false }
+
+        for item in filteredItems {
+            if case .app(let app) = item {
+                launchpadVM.launchApp(app)
+                hideWindow()
+                return true
+            }
+        }
+
+        return false
     }
 
     /// 隱藏動畫：向使用者方向放大並淡出（模仿原版啟動 app 時的效果）
@@ -316,7 +336,7 @@ struct LaunchpadView: View {
     }
 
     private var normalHeaderView: some View {
-        SearchBarView(text: $searchVM.searchText)
+        SearchBarView(text: $searchVM.searchText, isFocused: $searchFieldFocused)
             .onChange(of: searchVM.searchText) { _, _ in
                 paginationVM.reset()
                 dragAmount = .zero
@@ -617,11 +637,33 @@ struct LaunchpadView: View {
     
     private func setupEventManagers() {
         keyboardManager = KeyboardEventManager(
-            onLeftArrow: { paginationVM.previousPage() },
-            onRightArrow: { paginationVM.nextPage(totalPages: totalPages) },
+            onLeftArrow: {
+                // 搜尋中讓方向鍵回歸文字游標移動
+                guard expandedFolder == nil, searchVM.searchText.isEmpty else { return false }
+                paginationVM.previousPage()
+                return true
+            },
+            onRightArrow: {
+                guard expandedFolder == nil, searchVM.searchText.isEmpty else { return false }
+                paginationVM.nextPage(totalPages: totalPages)
+                return true
+            },
             onEscape: handleEscapeKey,
             onCommandW: hideWindow,
-            onCommandQ: quitApp
+            onCommandQ: quitApp,
+            onReturn: {
+                // 資料夾開啟時（可能在重新命名）讓 Return 傳給資料夾的輸入框
+                guard expandedFolder == nil, !editModeManager.isEditing else { return false }
+                return launchFirstSearchResult()
+            },
+            onPrintableKey: { characters in
+                // 打字即搜尋：焦點不在搜尋欄時，把輸入導進搜尋欄
+                guard expandedFolder == nil, !editModeManager.isEditing else { return false }
+                guard !searchFieldFocused else { return false }
+                searchVM.searchText += characters
+                searchFieldFocused = true
+                return true
+            }
         )
         keyboardManager?.startListening()
         
