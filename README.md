@@ -19,7 +19,8 @@ Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, gl
 
 ## What It Does (Aligned With Current Code)
 
-- Runs in a floating launcher window and can be toggled globally with `Cmd + L`
+- Runs in a floating launcher window and can be toggled globally with a customizable hotkey (default `Cmd + L`, configurable in Settings)
+- Opens and closes with a Launchpad-style zoom + fade animation; launching an app dismisses the launcher
 - Uses a responsive grid with dynamic rows/columns (5-9 columns, 3-7 rows)
 - Supports drag reorder, folders, folder rename, and drag-out from expanded folders
 - Searches by app name, bundle ID, and app path (case-insensitive)
@@ -30,13 +31,15 @@ Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, gl
 
 | Input | Behavior |
 | --- | --- |
-| `Cmd + L` | Toggle launcher visibility globally |
+| Global hotkey (default `Cmd + L`, configurable in Settings / `Cmd + ,`) | Toggle launcher visibility globally |
+| Type anywhere | Characters go straight into the search field |
+| `Return` | Launch the first search result |
 | `Cmd + W` | Hide launcher window |
 | `Cmd + Q` | Quit app |
 | `Esc` | Exit edit mode -> close folder -> clear search -> hide window |
-| `Left` / `Up` | Previous page |
-| `Right` / `Down` | Next page |
-| Trackpad scroll gesture | Page switch with threshold and cooldown |
+| `Left` / `Up` | Previous page (when search is empty) |
+| `Right` / `Down` | Next page (when search is empty) |
+| Trackpad scroll gesture | Pages follow your fingers; release to snap or flick to turn |
 | Mouse wheel | Page switch with notch accumulation + debounce |
 
 ## App Discovery Paths

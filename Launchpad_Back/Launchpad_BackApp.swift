@@ -22,7 +22,7 @@ struct Launchpad_BackApp: App {
     
     var body: some Scene {
         Settings {
-            EmptyView()
+            SettingsView()
         }
     }
 }
@@ -68,7 +68,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Logger.info("Application did finish launching")
         createMainWindowIfNeeded()
         registerGlobalHotKey()
+        observeHotKeySettings()
         showMainWindow()
+    }
+
+    /// 監聽快捷鍵設定變更：變更後重新註冊；錄製期間暫時取消註冊
+    private func observeHotKeySettings() {
+        let center = NotificationCenter.default
+
+        center.addObserver(forName: .hotKeyBindingChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.registerGlobalHotKey()
+        }
+        center.addObserver(forName: .hotKeyRecordingBegan, object: nil, queue: .main) { [weak self] _ in
+            self?.unregisterGlobalHotKey()
+        }
+        center.addObserver(forName: .hotKeyRecordingEnded, object: nil, queue: .main) { [weak self] _ in
+            self?.registerGlobalHotKey()
+        }
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -279,9 +295,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Logger.info("Main window created")
     }
     
-    /// 註冊全局快捷鍵 (Command + L)
+    /// 註冊全局快捷鍵（預設 Command + L，可在設定中自訂）
     private func registerGlobalHotKey() {
         unregisterGlobalHotKey()
+
+        let binding = HotKeySettingsStore.shared.binding
         
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -308,8 +326,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         let hotKeyID = EventHotKeyID(signature: globalHotKeySignature, id: globalHotKeyID)
         let registerStatus = RegisterEventHotKey(
-            UInt32(kVK_ANSI_L),
-            UInt32(cmdKey),
+            binding.keyCode,
+            binding.carbonModifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
@@ -325,7 +343,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         
-        Logger.info("Global hot key registered successfully")
+        Logger.info("Global hot key registered: \(binding.display)")
     }
     
     /// 取消註冊全局快捷鍵
