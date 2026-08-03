@@ -671,10 +671,10 @@ struct LaunchpadView: View {
             guard let paginationVM = paginationVM,
                   let launchpadVM = launchpadVM,
                   let searchVM = searchVM else { return }
-            
+
             let filteredCount = launchpadVM.filteredDisplayItems(matching: searchVM.searchText).count
             let totalPages = paginationVM.totalPages(for: filteredCount)
-            
+
             Logger.debug("Page change requested: direction=\(direction), currentPage=\(paginationVM.currentPage), totalPages=\(totalPages)")
 
             if direction > 0 {
@@ -683,6 +683,23 @@ struct LaunchpadView: View {
                 paginationVM.previousPage()
             }
         }
+
+        // 觸控板：頁面即時跟隨手指，放開時決定翻頁或彈回
+        gestureManager?.onTrackpadScrollChanged = { accumulated in
+            guard expandedFolder == nil,
+                  !editModeManager.isEditing,
+                  floatingDragState.item == nil else { return }
+
+            dragAmount = CGSize(width: trackpadDragOffset(for: accumulated), height: 0)
+        }
+        gestureManager?.onTrackpadScrollEnded = { accumulated, lastDelta in
+            guard expandedFolder == nil,
+                  !editModeManager.isEditing,
+                  floatingDragState.item == nil else { return }
+
+            settlePageAfterTrackpadScroll(accumulated: accumulated, lastDelta: lastDelta)
+        }
+
         gestureManager?.startListening()
     }
     
@@ -693,6 +710,34 @@ struct LaunchpadView: View {
         gestureManager = nil
     }
     
+    /// 觸控板跟手位移：邊界頁加入橡皮筋阻尼，並限制在一頁寬度內
+    private func trackpadDragOffset(for accumulated: CGFloat) -> CGFloat {
+        let pageWidth = max(paginationVM.screenSize.width, 1)
+        let atFirstPage = paginationVM.currentPage == 0
+        let atLastPage = paginationVM.currentPage >= totalPages - 1
+
+        var offset = accumulated
+        if (offset > 0 && atFirstPage) || (offset < 0 && atLastPage) {
+            offset *= 0.25
+        }
+        return max(-pageWidth, min(pageWidth, offset))
+    }
+
+    /// 觸控板放開後：依累積距離或甩動速度決定翻頁，否則彈回原頁
+    private func settlePageAfterTrackpadScroll(accumulated: CGFloat, lastDelta: CGFloat) {
+        let distanceThreshold: CGFloat = 50
+        let flickDeltaThreshold: CGFloat = 8
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            if accumulated > distanceThreshold || (accumulated > 20 && lastDelta > flickDeltaThreshold) {
+                paginationVM.previousPage()
+            } else if accumulated < -distanceThreshold || (accumulated < -20 && lastDelta < -flickDeltaThreshold) {
+                paginationVM.nextPage(totalPages: totalPages)
+            }
+            dragAmount = .zero
+        }
+    }
+
     private func handleDragEnd(_ value: DragGesture.Value) {
         let threshold: CGFloat = 50
         let velocity = value.predictedEndLocation.x - value.location.x
