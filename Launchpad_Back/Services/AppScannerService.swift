@@ -170,9 +170,15 @@ class AppScannerService {
             }
             
             // 優化：只提取必要的資訊，立即釋放 plist
-            let appName = infoPlist["CFBundleDisplayName"] as? String ??
-                infoPlist["CFBundleName"] as? String ??
-                fileName.replacingOccurrences(of: ".app", with: "")
+            // 注意：部分 App（如 Copilot for Xcode）的 CFBundleDisplayName 是空字串，
+            // 空字串仍是有效的 String，`??` 不會 fallback，因此要明確排除空白值
+            let appName = [
+                infoPlist["CFBundleDisplayName"] as? String,
+                infoPlist["CFBundleName"] as? String
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+                ?? fileName.replacingOccurrences(of: ".app", with: "")
             
             let bundleID = infoPlist["CFBundleIdentifier"] as? String ?? ""
             

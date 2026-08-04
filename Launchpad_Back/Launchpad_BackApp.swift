@@ -91,6 +91,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Logger.info("Application will terminate")
         unregisterGlobalHotKey()
     }
+
+    /// 點擊其他 App 或桌面時自動隱藏啟動器。
+    /// 使用 App 層級的失焦事件而非 windowDidResignKey：後者在焦點移到本 App 其他視窗
+    /// （設定視窗、重設版面的警告框）時同樣會觸發，而那個當下 NSApp.keyWindow 尚未更新，
+    /// 無法可靠地分辨「切到別的 App」和「切到自己的另一個視窗」。
+    func applicationDidResignActive(_ notification: Notification) {
+        guard let window = mainWindow, window.isVisible else { return }
+
+        Logger.info("App resigned active, hiding launcher")
+        hideMainWindow()
+    }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMainWindow()
@@ -125,30 +136,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             y: window.frame.origin.y
         )
         window.setFrame(NSRect(origin: adjustedOrigin, size: clampedSize), display: true)
-    }
-
-    /// 點擊視窗外部（其他 App 或桌面）時自動隱藏啟動器
-    func windowDidResignKey(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow,
-              window === mainWindow,
-              window.isVisible else {
-            return
-        }
-
-        // 延後一拍再判斷：切換焦點的瞬間 keyWindow 可能尚未更新，
-        // 且要排除焦點只是移到本 App 其他視窗（設定視窗、警告對話框）的情況
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let mainWindow = self.mainWindow, mainWindow.isVisible else { return }
-            guard !mainWindow.isKeyWindow else { return }
-
-            if let keyWindow = NSApp.keyWindow, keyWindow !== mainWindow {
-                Logger.debug("Resign key ignored: focus moved to another window of this app")
-                return
-            }
-
-            Logger.info("Window resigned key, hiding launcher")
-            self.hideMainWindow()
-        }
     }
 
     func windowWillClose(_ notification: Notification) {
