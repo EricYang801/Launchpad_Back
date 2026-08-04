@@ -13,6 +13,12 @@
 ## 畫面演示
 ![主介面](./Example.png)
 
+## 安裝
+
+到 [最新 Release](https://github.com/EricYang801/Launchpad_Back/releases/latest) 下載 `Launchpad_Back.app.zip`，解壓後把 `Launchpad_Back.app` 移到 `/Applications`。
+
+App 採用 ad-hoc 簽章而非公證（notarization），因此首次開啟會被 macOS 阻擋。請在 App 上按右鍵選擇「**打開**」並確認，或到「**系統設定 → 隱私權與安全性**」允許執行。
+
 ## 搜尋關鍵詞
 
 Launchpad 替代, macOS app launcher, SwiftUI 啟動器, AppKit launcher, 全域快捷鍵啟動器, macOS Tahoe Launchpad replacement, Homebrew Cask 掃描
@@ -20,9 +26,10 @@ Launchpad 替代, macOS app launcher, SwiftUI 啟動器, AppKit launcher, 全域
 ## 目前功能（依現行程式碼）
 
 - 浮動視窗啟動器，可用全域快捷鍵切換顯示（預設 `Cmd + L`，可於設定中自訂）
-- 開關具有 Launchpad 風格的縮放淡入淡出動畫；啟動 App 後自動關閉啟動器
+- 開關具有 Launchpad 風格的縮放淡入淡出動畫；啟動 App 或點擊視窗外部即關閉
 - 響應式分頁網格（動態 5-9 欄、3-7 列）
 - 支援拖曳排序、資料夾建立/重新命名、從展開資料夾拖出 App
+- 打字即開始搜尋，按 `Return` 啟動第一個結果
 - 搜尋會比對 App 名稱、bundle ID、安裝路徑（不分大小寫）
 - 掃描系統、使用者與 Homebrew 常見安裝位置
 - 圖示流程包含 workspace icon、metadata fallback 與自動 fallback icon
@@ -36,11 +43,22 @@ Launchpad 替代, macOS app launcher, SwiftUI 啟動器, AppKit launcher, 全域
 | `Return` | 啟動第一個搜尋結果 |
 | `Cmd + W` | 隱藏視窗 |
 | `Cmd + Q` | 結束程式 |
+| `Cmd + ,` | 開啟設定 |
 | `Esc` | 依序：退出編輯模式 -> 關閉資料夾 -> 清空搜尋 -> 隱藏視窗 |
 | `Left` / `Up` | 上一頁（搜尋為空時） |
 | `Right` / `Down` | 下一頁（搜尋為空時） |
+| 點擊視窗外部 | 隱藏啟動器 |
 | 觸控板捲動手勢 | 頁面即時跟隨手指，放開時翻頁或彈回 |
 | 滑鼠滾輪 | 依 notch 累積與防抖切頁 |
+
+## 設定
+
+按 `Cmd + ,` 開啟設定視窗，可重新錄製全域切換快捷鍵：點一下快捷鍵按鈕，再按下新的組合即可。
+
+- 一般按鍵需搭配 `Cmd`、`Opt` 或 `Ctrl`
+- `F1`–`F20` 可單獨綁定，因此能設成原版 Launchpad 的 `F4`
+- 錄製中按 `Esc` 取消
+- 變更後立即重新註冊，重開 App 仍會保留
 
 ## 應用掃描路徑
 
@@ -79,6 +97,7 @@ Launchpad_Back 會把版面狀態存到 `UserDefaults`：
 
 - `launchpad_item_order`
 - `launchpad_folders`
+- `globalToggleHotKey`
 
 ## 專案結構
 
@@ -95,6 +114,8 @@ Launchpad_Back/
 │   ├── AppScannerService.swift
 │   ├── GestureManager.swift
 │   ├── GridLayoutManager.swift
+│   ├── GridScreenLayout.swift
+│   ├── HotKeySettings.swift
 │   ├── KeyboardEventManager.swift
 │   └── Logger.swift
 ├── ViewModels/
@@ -107,7 +128,8 @@ Launchpad_Back/
 │   ├── BackgroundView.swift
 │   ├── FolderExpandedView.swift
 │   ├── PageIndicatorView.swift
-│   └── SearchBarView.swift
+│   ├── SearchBarView.swift
+│   └── SettingsView.swift
 └── Assets.xcassets/
 ```
 

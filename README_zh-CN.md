@@ -13,6 +13,12 @@
 ## 界面演示
 ![主界面](./Example.png)
 
+## 安装
+
+到 [最新 Release](https://github.com/EricYang801/Launchpad_Back/releases/latest) 下载 `Launchpad_Back.app.zip`，解压后把 `Launchpad_Back.app` 移到 `/Applications`。
+
+App 采用 ad-hoc 签名而非公证（notarization），因此首次打开会被 macOS 拦截。请在 App 上右键选择「**打开**」并确认，或到「**系统设置 → 隐私与安全性**」允许运行。
+
 ## 搜索关键词
 
 Launchpad 替代, macOS app launcher, SwiftUI 启动器, AppKit launcher, 全局快捷键启动器, macOS Tahoe Launchpad replacement, Homebrew Cask 扫描
@@ -20,7 +26,8 @@ Launchpad 替代, macOS app launcher, SwiftUI 启动器, AppKit launcher, 全局
 ## 当前功能（按现有代码）
 
 - 浮动窗口启动器，可通过全局快捷键切换显示（默认 `Cmd + L`，可在设置中自定义）
-- 开关具有 Launchpad 风格的缩放淡入淡出动画；启动 App 后自动关闭启动器
+- 开关具有 Launchpad 风格的缩放淡入淡出动画；启动 App 或点击窗口外部即关闭
+- 输入即开始搜索，按 `Return` 启动第一个结果
 - 响应式分页网格（动态 5-9 列、3-7 行）
 - 支持拖拽排序、文件夹创建/重命名、从展开文件夹拖出 App
 - 搜索会匹配 App 名称、bundle ID、安装路径（不区分大小写）
@@ -36,11 +43,22 @@ Launchpad 替代, macOS app launcher, SwiftUI 启动器, AppKit launcher, 全局
 | `Return` | 启动第一个搜索结果 |
 | `Cmd + W` | 隐藏窗口 |
 | `Cmd + Q` | 退出程序 |
+| `Cmd + ,` | 打开设置 |
 | `Esc` | 依次：退出编辑模式 -> 关闭文件夹 -> 清空搜索 -> 隐藏窗口 |
 | `Left` / `Up` | 上一页（搜索为空时） |
 | `Right` / `Down` | 下一页（搜索为空时） |
+| 点击窗口外部 | 隐藏启动器 |
 | 触控板滚动手势 | 页面实时跟随手指，松开时翻页或弹回 |
 | 鼠标滚轮 | 按 notch 累积和防抖切页 |
+
+## 设置
+
+按 `Cmd + ,` 打开设置窗口，可重新录制全局切换快捷键：点一下快捷键按钮，再按下新的组合即可。
+
+- 普通按键需搭配 `Cmd`、`Opt` 或 `Ctrl`
+- `F1`–`F20` 可单独绑定，因此能设成原版 Launchpad 的 `F4`
+- 录制中按 `Esc` 取消
+- 更改后立即重新注册，重开 App 仍会保留
 
 ## 应用扫描路径
 
@@ -79,6 +97,7 @@ Launchpad_Back 会把版面状态写入 `UserDefaults`：
 
 - `launchpad_item_order`
 - `launchpad_folders`
+- `globalToggleHotKey`
 
 ## 项目结构
 
@@ -95,6 +114,8 @@ Launchpad_Back/
 │   ├── AppScannerService.swift
 │   ├── GestureManager.swift
 │   ├── GridLayoutManager.swift
+│   ├── GridScreenLayout.swift
+│   ├── HotKeySettings.swift
 │   ├── KeyboardEventManager.swift
 │   └── Logger.swift
 ├── ViewModels/
@@ -107,7 +128,8 @@ Launchpad_Back/
 │   ├── BackgroundView.swift
 │   ├── FolderExpandedView.swift
 │   ├── PageIndicatorView.swift
-│   └── SearchBarView.swift
+│   ├── SearchBarView.swift
+│   └── SettingsView.swift
 └── Assets.xcassets/
 ```
 
