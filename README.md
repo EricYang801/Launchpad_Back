@@ -11,7 +11,12 @@
 Looking for a Launchpad alternative on macOS Tahoe? This project focuses on exactly that: a launcher with global hotkey toggle, paged app grid, folder management, drag sorting, and fast local search.
 
 ## Demo
+
 ![Main Interface](./Example.png)
+
+Rebind the global shortcut in Settings (`Cmd + ,`):
+
+<img src="./Settings.png" alt="Settings window" width="450" />
 
 ## Install
 
