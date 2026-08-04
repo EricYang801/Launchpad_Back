@@ -127,6 +127,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.setFrame(NSRect(origin: adjustedOrigin, size: clampedSize), display: true)
     }
 
+    /// 點擊視窗外部（其他 App 或桌面）時自動隱藏啟動器
+    func windowDidResignKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === mainWindow,
+              window.isVisible else {
+            return
+        }
+
+        // 延後一拍再判斷：切換焦點的瞬間 keyWindow 可能尚未更新，
+        // 且要排除焦點只是移到本 App 其他視窗（設定視窗、警告對話框）的情況
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let mainWindow = self.mainWindow, mainWindow.isVisible else { return }
+            guard !mainWindow.isKeyWindow else { return }
+
+            if let keyWindow = NSApp.keyWindow, keyWindow !== mainWindow {
+                Logger.debug("Resign key ignored: focus moved to another window of this app")
+                return
+            }
+
+            Logger.info("Window resigned key, hiding launcher")
+            self.hideMainWindow()
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
               window === mainWindow else {
