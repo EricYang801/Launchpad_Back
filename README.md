@@ -13,6 +13,12 @@ Looking for a Launchpad alternative on macOS Tahoe? This project focuses on exac
 ## Demo
 ![Main Interface](./Example.png)
 
+## Install
+
+Download `Launchpad_Back.app.zip` from the [latest release](https://github.com/EricYang801/Launchpad_Back/releases/latest), unzip it, and move `Launchpad_Back.app` into `/Applications`.
+
+The app is ad-hoc signed rather than notarized, so macOS blocks it on first launch. Right-click the app and choose **Open**, then confirm — or allow it under **System Settings → Privacy & Security**.
+
 ## Search Keywords
 
 Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, global hotkey launcher, macOS Tahoe Launchpad replacement, Homebrew Cask app scanner
@@ -20,9 +26,10 @@ Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, gl
 ## What It Does (Aligned With Current Code)
 
 - Runs in a floating launcher window and can be toggled globally with a customizable hotkey (default `Cmd + L`, configurable in Settings)
-- Opens and closes with a Launchpad-style zoom + fade animation; launching an app dismisses the launcher
+- Opens and closes with a Launchpad-style zoom + fade animation; launching an app or clicking outside the window dismisses it
 - Uses a responsive grid with dynamic rows/columns (5-9 columns, 3-7 rows)
 - Supports drag reorder, folders, folder rename, and drag-out from expanded folders
+- Starts searching as soon as you type, with `Return` launching the first match
 - Searches by app name, bundle ID, and app path (case-insensitive)
 - Scans system, user, and Homebrew app locations
 - Resolves app icons through workspace icon, metadata fallback, and generated fallback icon
@@ -36,11 +43,22 @@ Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, gl
 | `Return` | Launch the first search result |
 | `Cmd + W` | Hide launcher window |
 | `Cmd + Q` | Quit app |
+| `Cmd + ,` | Open Settings |
 | `Esc` | Exit edit mode -> close folder -> clear search -> hide window |
 | `Left` / `Up` | Previous page (when search is empty) |
 | `Right` / `Down` | Next page (when search is empty) |
+| Click outside the window | Hide launcher |
 | Trackpad scroll gesture | Pages follow your fingers; release to snap or flick to turn |
 | Mouse wheel | Page switch with notch accumulation + debounce |
+
+## Settings
+
+Press `Cmd + ,` to open Settings, where the global toggle shortcut can be re-recorded: click the shortcut button and press a new combination.
+
+- Regular keys require `Cmd`, `Opt`, or `Ctrl`
+- `F1`–`F20` can be bound on their own, so `F4` reproduces the original Launchpad key
+- `Esc` cancels recording
+- The hotkey is re-registered immediately and survives relaunch
 
 ## App Discovery Paths
 
@@ -79,6 +97,7 @@ Launchpad_Back stores layout state in `UserDefaults`:
 
 - `launchpad_item_order`
 - `launchpad_folders`
+- `globalToggleHotKey`
 
 ## Project Structure
 
@@ -95,6 +114,8 @@ Launchpad_Back/
 │   ├── AppScannerService.swift
 │   ├── GestureManager.swift
 │   ├── GridLayoutManager.swift
+│   ├── GridScreenLayout.swift
+│   ├── HotKeySettings.swift
 │   ├── KeyboardEventManager.swift
 │   └── Logger.swift
 ├── ViewModels/
@@ -107,7 +128,8 @@ Launchpad_Back/
 │   ├── BackgroundView.swift
 │   ├── FolderExpandedView.swift
 │   ├── PageIndicatorView.swift
-│   └── SearchBarView.swift
+│   ├── SearchBarView.swift
+│   └── SettingsView.swift
 └── Assets.xcassets/
 ```
 
