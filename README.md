@@ -79,7 +79,7 @@ You only need to do this once.
 
 Press `⌘,` while Launchpad is open.
 
-<img src="./Settings.png" alt="Launchpad_Back Settings window: global keyboard shortcut, Open at Login, Show in Dock, grid columns and rows, Reset Layout" width="450" />
+<img src="./Settings.png" alt="Launchpad_Back Settings window: keyboard shortcut, thumb-and-three-finger pinch, hot corner, Open at Login, Show in Dock, grid columns and rows, Reset Layout" width="450" />
 
 - **Shortcut** — click the button and press a new combination. Regular keys need `⌘`, `⌥` or `⌃`; `F1`–`F20` can be used alone.
 - **Pinch with Thumb and Three Fingers** — on by default.

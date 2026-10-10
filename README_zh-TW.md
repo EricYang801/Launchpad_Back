@@ -79,7 +79,7 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改用 Spotlight 裡的「App」�
 
 在 Launchpad 開啟時按 `⌘,`。
 
-<img src="./Settings.png" alt="Launchpad_Back 設定視窗：全域快捷鍵、登入時開啟、在 Dock 中顯示、網格欄數與列數、重設版面" width="450" />
+<img src="./Settings_zh-TW.png" alt="Launchpad_Back 設定視窗：快捷鍵、拇指與三指捏合、觸發角、登入時開啟、在 Dock 中顯示、網格欄數與列數、重設版面" width="450" />
 
 - **快捷鍵**：點按鈕後按下新的組合鍵。一般按鍵需搭配 `⌘`、`⌥` 或 `⌃`；`F1`–`F20` 可單獨使用。
 - **用拇指和三指捏合**：預設開啟。
