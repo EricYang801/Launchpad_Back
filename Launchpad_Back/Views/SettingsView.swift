@@ -1,124 +1,106 @@
-//
-//  SettingsView.swift
-//  Launchpad_Back
-//
-//  設定視窗（App 選單 > 設定…，或按 ⌘,）
-//
-
-import SwiftUI
 import AppKit
+import ServiceManagement
+import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject private var store = HotKeySettingsStore.shared
+    @Bindable var preferences: Preferences
+    let resetLayout: () -> Void
 
     @State private var isRecording = false
     @State private var recordingMonitor: Any?
-    @State private var errorMessage: String?
+    @State private var hotKeyError = false
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var confirmingReset = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("快捷鍵")
-                .font(.headline)
-
-            HStack {
-                Text("顯示 / 隱藏 Launchpad")
-
-                Spacer()
-
-                Button(action: toggleRecording) {
-                    Text(isRecording ? "按下新的快捷鍵…" : store.binding.display)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .frame(minWidth: 110)
+        Form {
+            Section {
+                LabeledContent("Show Launchpad") {
+                    Button(isRecording ? String(localized: "Press a shortcut…") : preferences.hotKey.display, action: toggleRecording)
+                        .frame(minWidth: 120)
                 }
+                if hotKeyError {
+                    Text("Use ⌘, ⌥ or ⌃ with a key, or a function key on its own.")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                Button("Restore Default (⌘L)") {
+                    preferences.hotKey = .default
+                    GlobalHotKey.shared.register(.default)
+                }
+                .disabled(preferences.hotKey == .default)
+            } header: {
+                Text("Keyboard Shortcut")
+            } footer: {
+                Text("F4 works on its own, like the original Launchpad key. Press Esc to cancel recording.")
             }
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+            Section("General") {
+                Toggle("Open at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { setLaunchAtLogin(launchAtLogin) }
+                Toggle("Show in Dock", isOn: $preferences.showsDockIcon)
+                    .onChange(of: preferences.showsDockIcon) {
+                        NSApp.setActivationPolicy(preferences.showsDockIcon ? .regular : .accessory)
+                        NSApp.activate()
+                    }
             }
 
-            Text("一般按鍵需搭配 ⌘、⌥ 或 ⌃ 修飾鍵；F1–F20 功能鍵可單獨使用。錄製中按 Esc 取消。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("還原預設（⌘L）") {
-                    store.resetToDefault()
-                    errorMessage = nil
-                }
-                .disabled(store.binding == .default)
+            Section("Layout") {
+                Stepper("Columns: \(preferences.columns)", value: $preferences.columns, in: Preferences.columnRange)
+                Stepper("Rows: \(preferences.rows)", value: $preferences.rows, in: Preferences.rowRange)
+                Button("Reset Layout…", role: .destructive) { confirmingReset = true }
             }
         }
-        .padding(20)
-        .frame(width: 380)
-        .onDisappear {
-            stopRecording()
+        .formStyle(.grouped)
+        .frame(width: 420)
+        .fixedSize(horizontal: false, vertical: true)
+        .confirmationDialog("Reset the layout?", isPresented: $confirmingReset) {
+            Button("Reset Layout", role: .destructive, action: resetLayout)
+        } message: {
+            Text("All folders are removed and apps are sorted by name.")
+        }
+        .onDisappear(perform: stopRecording)
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+        } catch {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            NSAlert(error: error).runModal()
         }
     }
 
-    // MARK: - 快捷鍵錄製
+    // MARK: - Shortcut recording
 
     private func toggleRecording() {
-        if isRecording {
-            stopRecording()
-        } else {
-            startRecording()
-        }
+        isRecording ? stopRecording() : startRecording()
     }
 
     private func startRecording() {
         guard recordingMonitor == nil else { return }
-
         isRecording = true
-        errorMessage = nil
-
-        // 錄製期間暫時取消全域快捷鍵，避免按到現有組合時觸發視窗切換
-        NotificationCenter.default.post(name: .hotKeyRecordingBegan, object: nil)
-
+        hotKeyError = false
+        // Release the current shortcut so pressing it again can be recorded.
+        GlobalHotKey.shared.unregister()
         recordingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            handleRecordingEvent(event)
-            return nil  // 錄製期間吞掉所有按鍵
+            if event.keyCode == 53 {
+                stopRecording()
+            } else if let hotKey = HotKey(event: event) {
+                preferences.hotKey = hotKey
+                stopRecording()
+            } else {
+                hotKeyError = true
+            }
+            return nil
         }
-    }
-
-    private func handleRecordingEvent(_ event: NSEvent) {
-        // Esc 取消錄製
-        if event.keyCode == 53 {
-            stopRecording()
-            return
-        }
-
-        guard let binding = HotKeySettingsStore.makeBinding(from: event) else {
-            errorMessage = "無效的組合：請加上 ⌘/⌥/⌃ 修飾鍵，或使用 F1–F20 功能鍵"
-            return
-        }
-
-        store.binding = binding
-        stopRecording()
     }
 
     private func stopRecording() {
-        if let monitor = recordingMonitor {
-            NSEvent.removeMonitor(monitor)
-            recordingMonitor = nil
-        }
-
+        if let recordingMonitor { NSEvent.removeMonitor(recordingMonitor) }
+        recordingMonitor = nil
         guard isRecording else { return }
-
         isRecording = false
-        NotificationCenter.default.post(name: .hotKeyRecordingEnded, object: nil)
+        GlobalHotKey.shared.register(preferences.hotKey)
     }
 }
-
-#if DEBUG
-struct SettingsView_Previews: PreviewProvider {
-    static var previews: some View {
-        SettingsView()
-    }
-}
-#endif
