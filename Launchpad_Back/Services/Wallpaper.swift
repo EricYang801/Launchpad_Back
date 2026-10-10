@@ -9,7 +9,11 @@ enum Wallpaper {
 
     /// Returns nil for wallpapers that are not still images (e.g. dynamic aerials); callers fall back to a material.
     static func blurred(for screen: NSScreen) async -> NSImage? {
-        guard let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
+        guard var url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
+        #if DEBUG
+        // README screenshots: `-BackdropImage <path>` blurs that image instead of the real wallpaper.
+        if let path = UserDefaults.standard.string(forKey: "BackdropImage") { url = URL(fileURLWithPath: path) }
+        #endif
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         let key = "\(url.path)|\(modified.timeIntervalSince1970)"
         if let cached, cached.key == key { return cached.image }
