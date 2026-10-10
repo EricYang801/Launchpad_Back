@@ -12,14 +12,16 @@ nonisolated struct GridMetrics: Equatable, Sendable {
     var iconSize: CGFloat { min(max((min(cellSize.width * 0.56, cellSize.height * 0.62)).rounded(), 40), 128) }
 
     /// Launchpad's proportions: a search field on top, page dots at the bottom, generous side margins.
-    static func main(in size: CGSize, columns: Int, rows: Int) -> GridMetrics {
-        let side = size.width * 0.1
+    /// The grid stays clear of the Dock, which is shown above Launchpad.
+    static func main(in size: CGSize, columns: Int, rows: Int, dock: DockPlacement = DockPlacement()) -> GridMetrics {
+        let area = dock.contentArea(in: size)
+        let side = area.width * 0.1
         let top = max(size.height * 0.12, 72)
-        let bottom = max(size.height * 0.1, 56)
+        let bottom = max(area.height * 0.1, 56)
         return GridMetrics(
             columns: columns,
             rows: rows,
-            frame: CGRect(x: side, y: top, width: max(size.width - side * 2, 1), height: max(size.height - top - bottom, 1))
+            frame: CGRect(x: area.minX + side, y: top, width: max(area.width - side * 2, 1), height: max(area.maxY - top - bottom, 1))
         )
     }
 
@@ -77,4 +79,31 @@ nonisolated struct GridMetrics: Equatable, Sendable {
     }
 
     var labelHeight: CGFloat { 18 }
+}
+
+/// Where the Dock sits and how much of the screen edge it covers (0 when it hides automatically).
+nonisolated struct DockPlacement: Equatable, Sendable {
+    enum Edge: Sendable { case bottom, left, right }
+
+    var edge: Edge = .bottom
+    var thickness: CGFloat = 0
+
+    /// The part of a full-screen window of `size` that the Dock leaves free.
+    func contentArea(in size: CGSize) -> CGRect {
+        switch edge {
+        case .bottom: CGRect(x: 0, y: 0, width: size.width, height: size.height - thickness)
+        case .left: CGRect(x: thickness, y: 0, width: size.width - thickness, height: size.height)
+        case .right: CGRect(x: 0, y: 0, width: size.width - thickness, height: size.height)
+        }
+    }
+
+    /// Dragging an app into this strip hands it to the Dock. A hidden Dock appears at the very edge.
+    func handoffZone(in size: CGSize) -> CGRect {
+        let depth = max(thickness, 4)
+        switch edge {
+        case .bottom: return CGRect(x: 0, y: size.height - depth, width: size.width, height: depth)
+        case .left: return CGRect(x: 0, y: 0, width: depth, height: size.height)
+        case .right: return CGRect(x: size.width - depth, y: 0, width: depth, height: size.height)
+        }
+    }
 }

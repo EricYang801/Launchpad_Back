@@ -49,11 +49,14 @@ final class LaunchpadStore {
     /// Drives the open/close zoom; the window controller orders the window out after it.
     var isPresented = false
     var size: CGSize = .zero
+    var dock = DockPlacement()
     var backdrop: NSImage?
 
     let preferences: Preferences
     /// Hides the Launchpad window.
     @ObservationIgnored var dismiss: () -> Void = {}
+    /// Starts a system drag of the app so it can be dropped on the Dock; returns false if it couldn't start.
+    @ObservationIgnored var dragToDock: (AppItem) -> Bool = { _ in false }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let scanner: AppScanner
@@ -65,6 +68,10 @@ final class LaunchpadStore {
     /// A click that ends a drag must not also launch or open the icon.
     @ObservationIgnored private var lastDragEnd = Date.distantPast
     @ObservationIgnored private var searchCache: (query: String, results: [AppItem])?
+    @ObservationIgnored private var itemsVersion = 0
+    @ObservationIgnored private var gridCache: (key: GridKey, items: [LaunchItem])?
+    /// The current drag became a system drag towards the Dock; ignore the rest of the gesture.
+    @ObservationIgnored private var handedOffToDock = false
 
     static let spring = Animation.spring(response: 0.35, dampingFraction: 0.86)
 
@@ -95,6 +102,7 @@ final class LaunchpadStore {
         guard scannedApps != apps else { return }
         apps = scannedApps
         searchCache = nil
+        gridCache = nil
         let before = layout
         layout.place(apps)
         if layout != before { layout.save(to: defaults) }
@@ -115,6 +123,7 @@ final class LaunchpadStore {
 
     private func refreshItems() {
         items = layout.items(for: apps)
+        itemsVersion += 1
         page = min(page, pageCount - 1)
         if openFolderID != nil, openFolder == nil { openFolderID = nil }
     }
@@ -122,8 +131,11 @@ final class LaunchpadStore {
     // MARK: - Derived
 
     var metrics: GridMetrics {
-        .main(in: size, columns: preferences.columns, rows: preferences.rows)
+        .main(in: size, columns: preferences.columns, rows: preferences.rows, dock: dock)
     }
+
+    /// The window area not covered by the Dock.
+    var contentArea: CGRect { dock.contentArea(in: size) }
 
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -147,12 +159,37 @@ final class LaunchpadStore {
     }
 
     /// What the main grid shows: search results, or the layout with a dragged icon at its prospective spot.
+    /// Memoized: during a drag it is read several times per pointer move (grid, page count, drop target).
     var gridItems: [LaunchItem] {
-        if isSearching { return searchResults.map(LaunchItem.app) }
-        guard let drag, drag.sourceFolder == nil || drag.leftFolder else { return items }
-        var list = items.filter { $0.id != drag.item.id }
-        list.insert(drag.item, at: min(drag.index, list.count))
+        let items = items, drag = drag
+        let movingInGrid = drag.map { $0.sourceFolder == nil || $0.leftFolder } ?? false
+        let key = GridKey(
+            version: itemsVersion,
+            query: isSearching ? query : "",
+            dragID: movingInGrid ? drag?.item.id : nil,
+            dragIndex: movingInGrid ? drag?.index ?? 0 : 0
+        )
+        if let gridCache, gridCache.key == key { return gridCache.items }
+
+        let list: [LaunchItem]
+        if isSearching {
+            list = searchResults.map(LaunchItem.app)
+        } else if movingInGrid, let drag {
+            var moved = items.filter { $0.id != drag.item.id }
+            moved.insert(drag.item, at: min(drag.index, moved.count))
+            list = moved
+        } else {
+            list = items
+        }
+        gridCache = (key, list)
         return list
+    }
+
+    private struct GridKey: Equatable {
+        var version: Int
+        var query: String
+        var dragID: String?
+        var dragIndex: Int
     }
 
     var pageCount: Int {
@@ -252,6 +289,7 @@ final class LaunchpadStore {
     /// Clears transient state each time Launchpad opens.
     func prepareForPresentation() {
         cancelDrag()
+        handedOffToDock = false
         query = ""
         isEditing = false
         openFolderID = nil
@@ -327,7 +365,7 @@ final class LaunchpadStore {
     // MARK: - Drag and drop
 
     func dragChanged(_ item: LaunchItem, from folderID: UUID?, to location: CGPoint) {
-        guard !isSearching else { return }
+        guard !isSearching, !handedOffToDock else { return }
         if drag == nil {
             let index = folderID == nil
                 ? items.firstIndex { $0.id == item.id }
@@ -336,7 +374,19 @@ final class LaunchpadStore {
             drag = DragState(item: item, sourceFolder: folderID, index: index ?? 0)
         }
         dragLocation = location
+        // Like Launchpad, an app dragged onto the Dock is added there; the icon returns to its place here.
+        if let app = item.app, dock.handoffZone(in: size).contains(location), dragToDock(app) {
+            handedOffToDock = true
+            cancelDrag()
+            return
+        }
         updateDropTarget()
+    }
+
+    /// The system drag towards the Dock finished, wherever it was dropped.
+    func dockDragEnded() {
+        handedOffToDock = false
+        lastDragEnd = Date()
     }
 
     func endDrag() {
@@ -443,7 +493,8 @@ final class LaunchpadStore {
         guard drag != nil else { return }
         let location = dragLocation
         let edge: CGFloat = 40
-        let direction = location.x < edge ? -1 : (location.x > size.width - edge ? 1 : 0)
+        let area = contentArea
+        let direction = location.x < area.minX + edge ? -1 : (location.x > area.maxX - edge ? 1 : 0)
         guard direction != edgeDirection else { return }
         edgeDirection = direction
         edgeTask?.cancel()

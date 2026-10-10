@@ -6,6 +6,8 @@ final class InputMonitor {
     private weak var window: NSWindow?
     private let openSettings: () -> Void
     private var monitors: [Any] = []
+    /// The latest mouse-drag event in the window; a system drag to the Dock has to start from one.
+    private(set) var lastMouseDragged: NSEvent?
 
     private var swipeDistance: CGFloat = 0
     private var lastSwipeDelta: CGFloat = 0
@@ -29,6 +31,10 @@ final class InputMonitor {
                 guard let self else { return event }
                 return self.scroll(event)
             },
+            NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
+                if event.window === self?.window { self?.lastMouseDragged = event }
+                return event
+            },
             NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
                 // Drop on mouse-up even if SwiftUI dropped the drag gesture along the way.
                 if event.window === self?.window { self?.store.endDrag() }
@@ -40,6 +46,7 @@ final class InputMonitor {
     func stop() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
+        lastMouseDragged = nil
     }
 
     private func key(_ event: NSEvent) -> NSEvent? {

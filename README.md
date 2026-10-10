@@ -27,6 +27,9 @@ Apple removed Launchpad in macOS 26 Tahoe and replaced it with the "Apps" view i
 - **Edit mode** — long-press an icon or simply start dragging. Icons jiggle and move aside live while you drag; hold a dragged icon at the screen edge to move it to another page. Click empty space or press `Esc` to finish.
 - **Type to search** — just start typing. Matches localized app names, English names, bundle IDs and paths, with name-prefix matches first. Arrow keys move the selection, `Return` opens it.
 - **Global shortcut** — default `⌘L`, re-recordable in Settings. `F1`–`F20` can be used on their own, so `F4` works like the old Launchpad key.
+- **Trackpad pinch** — pinch your thumb and three fingers together to open Launchpad, spread them to close it, just like the original gesture. Only exactly four fingers count; five-finger pinches are left to macOS (see [the FAQ](#the-pinch-also-opens-macoss-apps-view-or-shows-the-desktop)).
+- **Hot corner** — move the pointer into a screen corner of your choice to show or hide Launchpad.
+- **Drag to the Dock** — the Dock stays visible above Launchpad, as in the original; drag an app onto it to keep it there.
 - **Finds all your apps** — `/System/Applications` (incl. Utilities), `/Applications` and its subfolders (e.g. Adobe suites), `~/Applications`, and Homebrew Caskroom on Apple silicon (`/opt/homebrew`) and Intel (`/usr/local`). Rescans every time Launchpad opens, so new or removed apps show up immediately.
 - **Your layout is kept** — order and folders are saved locally. Apps that are temporarily missing (e.g. on an unplugged drive) keep their place and come back to it. Layouts from 2.x are migrated automatically.
 - **Light on memory** — about 40 MB of RAM with ~150 apps installed. Icons are rasterized at the size they are shown, search results are computed once per query, and a rescan that finds no changes skips the redraw.
@@ -57,7 +60,7 @@ You only need to do this once.
 
 | Action | How |
 | --- | --- |
-| Show / hide Launchpad | Global shortcut (default `⌘L`), click the Dock icon, or open the app again |
+| Show / hide Launchpad | Global shortcut (default `⌘L`), pinch with thumb and three fingers (spread to close), the hot corner, click the Dock icon, or open the app again |
 | Open an app | Click its icon |
 | Turn pages | Two-finger swipe, mouse wheel, click-and-drag on empty space, `←` / `→`, or click a page dot |
 | Search | Start typing; `↑` `↓` `←` `→` move the selection, `Return` opens it |
@@ -66,6 +69,7 @@ You only need to do this once.
 | Create a folder | Drop an app onto another app |
 | Rename a folder | Click the folder title |
 | Remove an app from a folder | Drag it out of the open folder |
+| Add an app to the Dock | Drag it onto the Dock |
 | Go back one step | `Esc`: cancel drag → close folder → leave edit mode → clear search → close Launchpad |
 | Close Launchpad | Launch an app, click empty space, switch to another app, or `⌘W` |
 | Open Settings | `⌘,` |
@@ -78,6 +82,8 @@ Press `⌘,` while Launchpad is open.
 <img src="./Settings.png" alt="Launchpad_Back Settings window: global keyboard shortcut, Open at Login, Show in Dock, grid columns and rows, Reset Layout" width="450" />
 
 - **Shortcut** — click the button and press a new combination. Regular keys need `⌘`, `⌥` or `⌃`; `F1`–`F20` can be used alone.
+- **Pinch with Thumb and Three Fingers** — on by default.
+- **Hot Corner** — off by default; pick Top Left, Top Right, Bottom Left or Bottom Right.
 - **Open at Login** — start Launchpad_Back automatically when you log in.
 - **Show in Dock** — turn off to hide the Dock icon.
 - **Grid** — columns (4–12) and rows (3–9).
@@ -101,9 +107,21 @@ Yes. Open Settings (`⌘,`), click the shortcut button and press `F4`. Function 
 
 Your order and folders are saved locally and survive restarts and updates. Layouts created with Launchpad_Back 2.x are migrated automatically. It does not import the layout from Apple's old Launchpad.
 
+### The pinch also opens macOS's "Apps" view or shows the desktop
+
+macOS uses the same thumb-and-three-finger pinch for its own **Apps** view (spreading shows the desktop). Launchpad_Back only reacts to exactly four fingers, so turn off the system's four-finger pinch and keep the five-finger one for macOS. If the switch in **System Settings → Trackpad → More Gestures** doesn't stay off, run this in Terminal:
+
+```bash
+defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerPinchGesture -int 0
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerPinchGesture -int 0
+killall Dock
+```
+
+Then log out and back in. Check it with `defaults read com.apple.AppleMultitouchTrackpad TrackpadFourFingerPinchGesture` (`0` is off). To undo, run the same commands with `-int 2`.
+
 ### Does it need any permissions?
 
-No. The global shortcut uses Carbon hot keys, so no Accessibility permission is needed. Everything stays on your Mac.
+No. The global shortcut uses Carbon hot keys, the hot corner only watches pointer movement, and the pinch reads trackpad touches locally, so no Accessibility permission is needed. Everything stays on your Mac.
 
 ### Is this an Apple app?
 

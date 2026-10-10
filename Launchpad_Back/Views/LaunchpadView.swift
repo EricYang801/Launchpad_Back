@@ -23,7 +23,7 @@ struct LaunchpadView: View {
 
                 ZStack {
                     SearchField(text: $store.query, focused: $searchFocused)
-                        .position(x: size.width / 2, y: metrics.frame.minY * 0.5)
+                        .position(x: metrics.frame.midX, y: metrics.frame.minY * 0.5)
 
                     PagedIcons(
                         store: store,
@@ -39,10 +39,10 @@ struct LaunchpadView: View {
                         Text("No Results")
                             .font(.system(size: 20, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
-                            .position(x: size.width / 2, y: size.height / 2)
+                            .position(x: metrics.frame.midX, y: size.height / 2)
                     } else if store.pageCount > 1 {
                         PageDots(count: store.pageCount, current: store.page) { store.goToPage($0) }
-                            .position(x: size.width / 2, y: metrics.frame.maxY + (size.height - metrics.frame.maxY) * 0.45)
+                            .position(x: metrics.frame.midX, y: metrics.frame.maxY + (store.contentArea.maxY - metrics.frame.maxY) * 0.45)
                     }
                 }
                 .blur(radius: store.showsFolder ? 24 : 0)

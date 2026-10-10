@@ -27,6 +27,9 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改用 Spotlight 裡的「App」�
 - **編輯模式**：長按圖示或直接開始拖曳即可進入。圖示會抖動，拖曳時其他圖示即時讓位；把圖示停在螢幕邊緣就能移到其他頁。點空白處或按 `Esc` 結束。
 - **打字就能搜尋**：直接開始輸入即可。會比對在地化的 App 名稱、英文名稱、bundle ID 與路徑，名稱開頭相符的排在最前面。用方向鍵移動選取，按 `Return` 開啟。
 - **全域快捷鍵**：預設 `⌘L`，可在設定中重新錄製。`F1`–`F20` 可單獨使用，設成 `F4` 就跟以前的 Launchpad 鍵一樣。
+- **觸控式軌跡板捏合**：拇指與三指靠攏就打開 Launchpad，分開就關閉，跟原版手勢一樣。只有剛好四指才會觸發，五指捏合留給 macOS（見下方常見問題）。
+- **觸發角**：把指標移到你選的螢幕角落，就能顯示或隱藏 Launchpad。
+- **拖到 Dock**：Dock 會像原版一樣顯示在 Launchpad 上方，把 App 拖上去就能加入 Dock。
 - **找得到你所有的應用程式**：`/System/Applications`（含「工具程式」）、`/Applications` 及其子資料夾（例如 Adobe 套裝）、`~/Applications`，以及 Apple 晶片（`/opt/homebrew`）與 Intel（`/usr/local`）上的 Homebrew Caskroom。每次開啟 Launchpad 都會重新掃描，新安裝或刪除的 App 會立刻反映。
 - **保留你的排列**：順序與資料夾都儲存在本機。暫時找不到的 App（例如放在未接上的外接硬碟）會保留原本的位置，回來時歸位。2.x 版的排列會自動移轉。
 - **記憶體佔用極低**：安裝約 150 個 App 時只用大約 40 MB 記憶體。圖示依實際顯示大小產生，搜尋結果每個關鍵字只計算一次，重新掃描沒有變化時也不會重繪畫面。
@@ -57,7 +60,7 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改用 Spotlight 裡的「App」�
 
 | 動作 | 操作 |
 | --- | --- |
-| 顯示／隱藏 Launchpad | 全域快捷鍵（預設 `⌘L`）、點 Dock 圖示，或再次開啟 App |
+| 顯示／隱藏 Launchpad | 全域快捷鍵（預設 `⌘L`）、拇指與三指靠攏（分開即關閉）、觸發角、點 Dock 圖示，或再次開啟 App |
 | 開啟應用程式 | 點一下圖示 |
 | 翻頁 | 雙指滑動、滑鼠滾輪、在空白處按住拖曳、`←` / `→`，或點分頁圓點 |
 | 搜尋 | 直接打字；`↑` `↓` `←` `→` 移動選取，`Return` 開啟 |
@@ -66,6 +69,7 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改用 Spotlight 裡的「App」�
 | 建立資料夾 | 把 App 拖到另一個 App 上 |
 | 重新命名資料夾 | 點資料夾標題 |
 | 把 App 移出資料夾 | 從打開的資料夾中拖出來 |
+| 把 App 加入 Dock | 把圖示拖到 Dock 上 |
 | 退回上一步 | `Esc`：取消拖曳 → 關閉資料夾 → 離開編輯模式 → 清除搜尋 → 關閉 Launchpad |
 | 關閉 Launchpad | 開啟 App、點空白處、切換到其他 App，或按 `⌘W` |
 | 打開設定 | `⌘,` |
@@ -78,6 +82,8 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改用 Spotlight 裡的「App」�
 <img src="./Settings.png" alt="Launchpad_Back 設定視窗：全域快捷鍵、登入時開啟、在 Dock 中顯示、網格欄數與列數、重設版面" width="450" />
 
 - **快捷鍵**：點按鈕後按下新的組合鍵。一般按鍵需搭配 `⌘`、`⌥` 或 `⌃`；`F1`–`F20` 可單獨使用。
+- **用拇指和三指捏合**：預設開啟。
+- **觸發角**：預設關閉，可選左上角、右上角、左下角或右下角。
 - **登入時開啟**：登入 Mac 時自動啟動 Launchpad_Back。
 - **在 Dock 中顯示**：關閉即可隱藏 Dock 圖示。
 - **網格**：欄數（4–12）與列數（3–9）。
@@ -101,9 +107,21 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改由 Spotlight 裡的「App」�
 
 會。順序和資料夾都儲存在本機，重新開機或更新後依然存在。Launchpad_Back 2.x 版的排列會自動移轉。不過它不會匯入 Apple 舊版 Launchpad 的排列。
 
+### 捏合時 macOS 的「App」畫面也跳出來，或變成顯示桌面
+
+macOS 自己的「App」畫面也是用拇指與三指靠攏（分開則是顯示桌面）。Launchpad_Back 只對剛好四指有反應，所以請關掉系統的四指捏合，五指捏合留給 macOS。如果「系統設定 → 觸控式軌跡板 → 更多手勢」裡的開關關不掉，可以在「終端機」執行：
+
+```bash
+defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerPinchGesture -int 0
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerPinchGesture -int 0
+killall Dock
+```
+
+執行後登出再登入。可以用 `defaults read com.apple.AppleMultitouchTrackpad TrackpadFourFingerPinchGesture` 確認（`0` 代表關閉）。想還原的話，把指令裡的 `-int 0` 改成 `-int 2` 再執行一次。
+
 ### 需要給什麼權限嗎？
 
-不需要。全域快捷鍵使用 Carbon hot key 機制，不必開啟「輔助使用」權限。
+不需要。全域快捷鍵使用 Carbon hot key 機制，觸發角只偵測指標移動，捏合手勢在本機讀取觸控式軌跡板的觸碰資料，都不必開啟「輔助使用」權限。所有資料都留在你的 Mac 上。
 
 ### 這是 Apple 的 App 嗎？
 

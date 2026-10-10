@@ -33,6 +33,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         GlobalHotKey.shared.action = { [weak self] in self?.launchpad.toggle() }
         GlobalHotKey.shared.register(preferences.hotKey)
 
+        TrackpadPinch.shared.onPinch = { [weak self] in
+            guard let self, !self.launchpad.isShown else { return }
+            self.launchpad.show()
+        }
+        TrackpadPinch.shared.onSpread = { [weak self] in self?.launchpad.hide() }
+        TrackpadPinch.shared.isEnabled = preferences.pinchGesture
+
+        HotCorner.shared.action = { [weak self] in self?.launchpad.toggle() }
+        HotCorner.shared.corner = preferences.hotCorner
+
         launchpad.show()
     }
 

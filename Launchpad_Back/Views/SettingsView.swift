@@ -35,6 +35,21 @@ struct SettingsView: View {
                 Text("F4 works on its own, like the original Launchpad key. Press Esc to cancel recording.")
             }
 
+            Section {
+                Toggle("Pinch with Thumb and Three Fingers", isOn: $preferences.pinchGesture)
+                    .onChange(of: preferences.pinchGesture) { TrackpadPinch.shared.isEnabled = preferences.pinchGesture }
+                Picker("Hot Corner", selection: $preferences.hotCorner) {
+                    ForEach(ScreenCorner.allCases) { corner in
+                        Text(corner.title).tag(corner)
+                    }
+                }
+                .onChange(of: preferences.hotCorner) { HotCorner.shared.corner = preferences.hotCorner }
+            } header: {
+                Text("Gestures")
+            } footer: {
+                Text("Spread the fingers to close. If macOS also reacts to the pinch, turn off its gesture in System Settings › Trackpad › More Gestures.")
+            }
+
             Section("General") {
                 Toggle("Open at Login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { setLaunchAtLogin(launchAtLogin) }
@@ -102,5 +117,17 @@ struct SettingsView: View {
         guard isRecording else { return }
         isRecording = false
         GlobalHotKey.shared.register(preferences.hotKey)
+    }
+}
+
+private extension ScreenCorner {
+    var title: LocalizedStringKey {
+        switch self {
+        case .off: "Off"
+        case .topLeft: "Top Left"
+        case .topRight: "Top Right"
+        case .bottomLeft: "Bottom Left"
+        case .bottomRight: "Bottom Right"
+        }
     }
 }
