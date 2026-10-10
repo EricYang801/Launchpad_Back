@@ -64,9 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showSettings() {
         launchpad.hide(animated: false, returnFocus: false)
         if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(preferences: preferences) { [weak self] in
-                self?.launchpad.store.resetLayout()
-            }))
+            let window = NSWindow(
+                contentViewController: NSHostingController(
+                    rootView: SettingsView(preferences: preferences) { [weak self] in
+                        self?.launchpad.store.resetLayout()
+                    }))
             window.title = String(localized: "Launchpad Settings")
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

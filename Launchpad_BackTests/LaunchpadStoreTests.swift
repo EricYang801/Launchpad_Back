@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Launchpad_Back
 
 @MainActor
@@ -8,9 +9,13 @@ final class LaunchpadStoreTests: XCTestCase {
 
     override func setUp() async throws {
         defaults = makeDefaults()
-        store = LaunchpadStore(preferences: Preferences(defaults: defaults), defaults: defaults, scanner: AppScanner(roots: []))
+        store = LaunchpadStore(
+            preferences: Preferences(defaults: defaults), defaults: defaults, scanner: AppScanner(roots: []))
         store.size = CGSize(width: 1440, height: 900)
-        store.setApps([makeApp("Alpha"), makeApp("Beta"), makeApp("Charlie"), makeApp("Delta", category: "public.app-category.games")])
+        store.setApps([
+            makeApp("Alpha"), makeApp("Beta"), makeApp("Charlie"),
+            makeApp("Delta", category: "public.app-category.games"),
+        ])
     }
 
     private var metrics: GridMetrics { store.metrics }
@@ -38,7 +43,8 @@ final class LaunchpadStoreTests: XCTestCase {
         let folder = try XCTUnwrap(store.openFolder)
         XCTAssertEqual(folder.name, String(localized: "Games"))
         XCTAssertEqual(folder.apps.map(\.name), ["Delta", "Alpha"])
-        XCTAssertNotNil(Layout.load(from: defaults).entries.first { if case .folder = $0 { true } else { false } }, "saved")
+        XCTAssertNotNil(
+            Layout.load(from: defaults).entries.first { if case .folder = $0 { true } else { false } }, "saved")
     }
 
     func testDropBetweenIconsReorders() async throws {
@@ -67,7 +73,8 @@ final class LaunchpadStoreTests: XCTestCase {
         store.endDrag()
 
         XCTAssertNil(store.openFolderID)
-        XCTAssertEqual(store.items.names, ["Alpha", "Charlie", "Delta", "Beta"], "the folder dissolves into its last app")
+        XCTAssertEqual(
+            store.items.names, ["Alpha", "Charlie", "Delta", "Beta"], "the folder dissolves into its last app")
     }
 
     func testSearchingDisablesDragging() {

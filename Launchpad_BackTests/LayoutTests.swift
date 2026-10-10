@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import Launchpad_Back
 
 final class LayoutTests: XCTestCase {
@@ -109,8 +110,11 @@ final class LayoutTests: XCTestCase {
     func testMigratesLegacyLayout() {
         let defaults = makeDefaults()
         let folderID = UUID()
-        defaults.set(["app:\(gamma.id)", "folder:\(folderID.uuidString)", "app:\(delta.id)"], forKey: "launchpad_item_order")
-        defaults.set([["id": folderID.uuidString, "name": "Old", "appIdentifiers": [alpha.id, beta.id]]], forKey: "launchpad_folders")
+        defaults.set(
+            ["app:\(gamma.id)", "folder:\(folderID.uuidString)", "app:\(delta.id)"], forKey: "launchpad_item_order")
+        defaults.set(
+            [["id": folderID.uuidString, "name": "Old", "appIdentifiers": [alpha.id, beta.id]]],
+            forKey: "launchpad_folders")
 
         var layout = Layout.load(from: defaults)
         layout.place(all)

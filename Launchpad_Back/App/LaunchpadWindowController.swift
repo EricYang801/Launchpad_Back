@@ -89,16 +89,20 @@ final class LaunchpadWindowController: NSObject, NSDraggingSource {
     private func beginDockDrag(_ app: AppItem) -> Bool {
         guard let view = window.contentView, let event = input?.lastMouseDragged else { return false }
         let size = store.metrics.iconSize
-        let icon = IconCache.shared.cachedIcon(for: app.url, pixels: IconCache.pixels(for: size))
+        let icon =
+            IconCache.shared.cachedIcon(for: app.url, pixels: IconCache.pixels(for: size))
             ?? NSWorkspace.shared.icon(forFile: app.url.path)
         let point = view.convert(event.locationInWindow, from: nil)
         let item = NSDraggingItem(pasteboardWriter: app.url as NSURL)
-        item.setDraggingFrame(NSRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size), contents: icon)
+        item.setDraggingFrame(
+            NSRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size), contents: icon)
         view.beginDraggingSession(with: [item], event: event, source: self)
         return true
     }
 
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+    func draggingSession(
+        _ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
         // Offer only a link, and only over the Dock: the Dock keeps a reference, a drop on Finder can never copy or
         // move the app bundle, and the Trash (which wants a move) refuses it.
         context == .outsideApplication && isOverDock(NSEvent.mouseLocation) ? .link : []
@@ -122,16 +126,18 @@ extension DockPlacement {
     static func current(on screen: NSScreen) -> DockPlacement {
         let frame = screen.frame
         let visible = screen.visibleFrame
-        let edge: Edge = switch UserDefaults(suiteName: "com.apple.dock")?.string(forKey: "orientation") {
-        case "left": .left
-        case "right": .right
-        default: .bottom
-        }
-        let thickness = switch edge {
-        case .bottom: visible.minY - frame.minY
-        case .left: visible.minX - frame.minX
-        case .right: frame.maxX - visible.maxX
-        }
+        let edge: Edge =
+            switch UserDefaults(suiteName: "com.apple.dock")?.string(forKey: "orientation") {
+            case "left": .left
+            case "right": .right
+            default: .bottom
+            }
+        let thickness =
+            switch edge {
+            case .bottom: visible.minY - frame.minY
+            case .left: visible.minX - frame.minX
+            case .right: frame.maxX - visible.maxX
+            }
         return DockPlacement(edge: edge, thickness: max(thickness, 0))
     }
 }

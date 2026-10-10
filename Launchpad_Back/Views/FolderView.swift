@@ -42,10 +42,13 @@ struct FolderView: View {
                 .position(x: panel.midX, y: panel.midY)
                 .onTapGesture { nameFocused = false }
 
-            PagedIcons(store: store, items: apps, metrics: grid, page: store.folderPage, pageWidth: panel.width, folderID: folder.id)
-                .mask {
-                    Rectangle().frame(width: panel.width, height: panel.height).position(x: panel.midX, y: panel.midY)
-                }
+            PagedIcons(
+                store: store, items: apps, metrics: grid, page: store.folderPage, pageWidth: panel.width,
+                folderID: folder.id
+            )
+            .mask {
+                Rectangle().frame(width: panel.width, height: panel.height).position(x: panel.midX, y: panel.midY)
+            }
 
             if pageCount > 1 {
                 PageDots(count: pageCount, current: store.folderPage) { store.goToPage($0) }

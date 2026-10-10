@@ -17,6 +17,7 @@ final class HotCorner {
         didSet {
             guard corner != oldValue else { return }
             corner == .off ? stop() : start()
+            updateCornerPoints()
         }
     }
 
@@ -25,35 +26,50 @@ final class HotCorner {
     private let rearmDistance: CGFloat = 40
 
     private var monitors: [Any] = []
+    private var screenObserver: Any?
     private var armed = true
+    /// The chosen corner of every screen. Pointer moves arrive constantly, so screens aren't queried per event.
+    private var cornerPoints: [CGPoint] = []
 
     private init() {}
 
     private func start() {
         guard monitors.isEmpty else { return }
         armed = true
-        // Global events come from other apps (no permission needed for pointer movement); local ones from Launchpad itself.
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved, handler: { [weak self] _ in self?.pointerMoved() }) {
-            monitors.append(global)
-        }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved, handler: { [weak self] event in
-            self?.pointerMoved()
-            return event
-        }) {
-            monitors.append(local)
-        }
+        updateCornerPoints()
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.updateCornerPoints() }
+        // Global events come from other apps (no permission needed for pointer movement),
+        // local ones from Launchpad itself.
+        monitors = [
+            NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+                self?.pointerMoved()
+            },
+            NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+                self?.pointerMoved()
+                return event
+            },
+        ].compactMap { $0 }
     }
 
     private func stop() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        screenObserver = nil
+    }
+
+    private func updateCornerPoints() {
+        cornerPoints = NSScreen.screens.compactMap { cornerPoint(of: $0.frame) }
     }
 
     private func pointerMoved() {
         let location = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(location, $0.frame, false) }),
-              let point = cornerPoint(of: screen.frame) else { return }
-        let distance = max(abs(location.x - point.x), abs(location.y - point.y))
+        var distance = CGFloat.greatestFiniteMagnitude
+        for point in cornerPoints {
+            distance = min(distance, max(abs(location.x - point.x), abs(location.y - point.y)))
+        }
         if armed, distance <= reach {
             armed = false
             action()

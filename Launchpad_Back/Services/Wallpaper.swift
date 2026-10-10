@@ -14,7 +14,8 @@ enum Wallpaper {
         // README screenshots: `-BackdropImage <path>` blurs that image instead of the real wallpaper.
         if let path = UserDefaults.standard.string(forKey: "BackdropImage") { url = URL(fileURLWithPath: path) }
         #endif
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        let modified =
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         let key = "\(url.path)|\(modified.timeIntervalSince1970)"
         if let cached, cached.key == key { return cached.image }
 

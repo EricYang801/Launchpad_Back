@@ -42,7 +42,9 @@ struct LaunchpadView: View {
                             .position(x: metrics.frame.midX, y: size.height / 2)
                     } else if store.pageCount > 1 {
                         PageDots(count: store.pageCount, current: store.page) { store.goToPage($0) }
-                            .position(x: metrics.frame.midX, y: metrics.frame.maxY + (store.contentArea.maxY - metrics.frame.maxY) * 0.45)
+                            .position(
+                                x: metrics.frame.midX,
+                                y: metrics.frame.maxY + (store.contentArea.maxY - metrics.frame.maxY) * 0.45)
                     }
                 }
                 .blur(radius: store.showsFolder ? 24 : 0)
@@ -78,7 +80,10 @@ struct LaunchpadView: View {
     private var swipeGesture: some Gesture {
         DragGesture(minimumDistance: 12)
             .onChanged { store.swipeChanged($0.translation.width) }
-            .onEnded { store.swipeEnded($0.translation.width, velocity: $0.predictedEndTranslation.width - $0.translation.width) }
+            .onEnded {
+                store.swipeEnded(
+                    $0.translation.width, velocity: $0.predictedEndTranslation.width - $0.translation.width)
+            }
     }
 }
 
@@ -144,7 +149,8 @@ struct SearchField: View {
         .padding(.horizontal, 8)
         .frame(width: 230, height: 28)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.12)))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.2), lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.2), lineWidth: 0.5))
     }
 }
 

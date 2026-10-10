@@ -65,7 +65,9 @@ final class InputMonitor {
 
         let renaming = store.isRenaming
         switch event.keyCode {
-        case 53: store.escape(); return nil
+        case 53:
+            store.escape()
+            return nil
         case 36, 76: return !renaming && store.handle(.enter) ? nil : event
         case 123: return !renaming && store.handle(.left) ? nil : event
         case 124: return !renaming && store.handle(.right) ? nil : event
@@ -77,8 +79,9 @@ final class InputMonitor {
         // Type anywhere to search: send keys to the search field when no text field has focus.
         let isEditingText = window.firstResponder is NSTextView
         if !isEditingText, !flags.contains(.control), let characters = event.characters,
-           let scalar = characters.unicodeScalars.first,
-           !CharacterSet.controlCharacters.contains(scalar), !(0xF700...0xF8FF).contains(scalar.value) {
+            let scalar = characters.unicodeScalars.first,
+            !CharacterSet.controlCharacters.contains(scalar), !(0xF700...0xF8FF).contains(scalar.value)
+        {
             store.query += characters
             // Focusing the field selects its text; put the caret at the end so the next key doesn't replace it.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak window] in
@@ -95,7 +98,8 @@ final class InputMonitor {
         if event.hasPreciseScrollingDeltas {
             // Trackpad: the page follows the fingers, then snaps. Momentum events are ignored.
             guard event.momentumPhase.isEmpty else { return nil }
-            let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
+            let delta =
+                abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
             if event.phase.contains(.began) {
                 swipeDistance = 0
                 lastSwipeDelta = 0

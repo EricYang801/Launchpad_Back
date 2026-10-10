@@ -38,26 +38,32 @@ private struct IconRequest: Equatable {
     let pixels: Int
 }
 
-/// A folder as it appears in the grid: a translucent tile previewing the first nine apps.
+/// A folder as it appears in the grid: a translucent tile previewing the first nine apps in a 3 × 3 grid.
 struct FolderIconImage: View {
     let folder: Folder
     let size: CGFloat
 
     var body: some View {
+        // App icon artwork fills about 82% of its canvas; the tile matches that so folders line up with apps.
         let tile = size * 0.82
-        let mini = tile * 0.24
-        let spacing = tile * 0.06
+        let inset = tile * 0.1
+        let spacing = tile * 0.045
+        let mini = (tile - inset * 2 - spacing * 2) / 3
+        // The backdrop is already a blurred image, so a plain translucent fill reads like a material at a
+        // fraction of the cost (a material re-blurs what's behind it on every frame of a page swipe).
         RoundedRectangle(cornerRadius: tile * 0.23, style: .continuous)
-            .fill(.white.opacity(0.22))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: tile * 0.23, style: .continuous))
+            .fill(.white.opacity(0.24))
             .frame(width: tile, height: tile)
-            .overlay {
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(mini), spacing: spacing), count: 3), spacing: spacing) {
-                    ForEach(folder.apps.prefix(9)) { app in
-                        AppIconImage(app: app, size: mini)
-                    }
+            .overlay(alignment: .topLeading) {
+                ForEach(Array(folder.apps.prefix(9).enumerated()), id: \.element.id) { index, app in
+                    // Drawn a little larger than the slot: icons have transparent padding around the artwork.
+                    AppIconImage(app: app, size: mini * 1.22)
+                        .frame(width: mini, height: mini)
+                        .offset(
+                            x: inset + CGFloat(index % 3) * (mini + spacing),
+                            y: inset + CGFloat(index / 3) * (mini + spacing)
+                        )
                 }
-                .frame(width: mini * 3 + spacing * 2, height: mini * 3 + spacing * 2, alignment: .top)
             }
             .frame(width: size, height: size)
     }
@@ -118,10 +124,11 @@ struct IconCell: View {
         .contentShape(Rectangle())
         .highPriorityGesture(dragGesture, including: store.isSearching ? .subviews : .all)
         .simultaneousGesture(TapGesture().onEnded { store.activate(item) })
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in
-            guard !store.isSearching else { return }
-            withAnimation { store.isEditing = true }
-        })
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                guard !store.isSearching else { return }
+                withAnimation { store.isEditing = true }
+            })
     }
 
     private var dragGesture: some Gesture {
@@ -176,10 +183,13 @@ struct PagedIcons: View {
                 let center = metrics.center(of: index)
                 IconCell(
                     store: store, item: item, metrics: metrics, folderID: folderID,
-                    isSelected: index == selection, isDragged: item.id == draggedID, isMergeTarget: item.id == mergeTarget
+                    isSelected: index == selection, isDragged: item.id == draggedID,
+                    isMergeTarget: item.id == mergeTarget
                 )
-                    .position(x: center.x + CGFloat(index / metrics.perPage - page) * pageWidth + offset, y: center.y)
+                .position(x: center.x + CGFloat(index / metrics.perPage - page) * pageWidth, y: center.y)
             }
         }
+        // One offset for the whole strip: a swipe changes only this, so the cells themselves stay untouched.
+        .offset(x: offset)
     }
 }

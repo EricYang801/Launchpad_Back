@@ -14,9 +14,12 @@ nonisolated struct HotKey: Codable, Equatable, Sendable {
         let modifiers = Self.carbonModifiers(from: event.modifierFlags)
         let functionKey = Self.functionKeys[event.keyCode]
         guard modifiers & ~UInt32(shiftKey) != 0 || functionKey != nil else { return nil }
-        guard let key = functionKey ?? Self.specialKeys[event.keyCode]
-                ?? event.charactersIgnoringModifiers.flatMap({ $0.isEmpty ? nil : $0.uppercased() }) else { return nil }
-        self.init(keyCode: UInt32(event.keyCode), carbonModifiers: modifiers, display: Self.symbols(for: modifiers) + key)
+        guard
+            let key = functionKey ?? Self.specialKeys[event.keyCode]
+                ?? event.charactersIgnoringModifiers.flatMap({ $0.isEmpty ? nil : $0.uppercased() })
+        else { return nil }
+        self.init(
+            keyCode: UInt32(event.keyCode), carbonModifiers: modifiers, display: Self.symbols(for: modifiers) + key)
     }
 
     init(keyCode: UInt32, carbonModifiers: UInt32, display: String) {
@@ -43,7 +46,8 @@ nonisolated struct HotKey: Codable, Equatable, Sendable {
 
     private static let functionKeys: [UInt16: String] = [
         122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8", 101: "F9", 109: "F10",
-        103: "F11", 111: "F12", 105: "F13", 107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20",
+        103: "F11", 111: "F12", 105: "F13", 107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19",
+        90: "F20",
     ]
 
     private static let specialKeys: [UInt16: String] = [
@@ -64,8 +68,9 @@ final class GlobalHotKey {
     func register(_ hotKey: HotKey) {
         unregister()
         installHandlerIfNeeded()
-        let id = EventHotKeyID(signature: 0x4C50_424B, id: 1) // "LPBK"
-        let status = RegisterEventHotKey(hotKey.keyCode, hotKey.carbonModifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
+        let id = EventHotKeyID(signature: 0x4C50_424B, id: 1)  // "LPBK"
+        let status = RegisterEventHotKey(
+            hotKey.keyCode, hotKey.carbonModifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
         if status != noErr { NSLog("Launchpad: could not register %@ (%d)", hotKey.display, status) }
     }
 
@@ -77,11 +82,13 @@ final class GlobalHotKey {
     private func installHandlerIfNeeded() {
         guard handlerRef == nil else { return }
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
-            guard let userData else { return OSStatus(eventNotHandledErr) }
-            let hotKey = Unmanaged<GlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
-            DispatchQueue.main.async { hotKey.action() }
-            return noErr
-        }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, _, userData in
+                guard let userData else { return OSStatus(eventNotHandledErr) }
+                let hotKey = Unmanaged<GlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
+                DispatchQueue.main.async { hotKey.action() }
+                return noErr
+            }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
     }
 }

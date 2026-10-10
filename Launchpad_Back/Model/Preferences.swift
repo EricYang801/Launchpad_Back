@@ -26,12 +26,15 @@ final class Preferences {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        columns = (defaults.object(forKey: "columns") as? Int).map { Self.columnRange.clamped($0) } ?? Self.defaultColumns
+        columns =
+            (defaults.object(forKey: "columns") as? Int).map { Self.columnRange.clamped($0) } ?? Self.defaultColumns
         rows = (defaults.object(forKey: "rows") as? Int).map { Self.rowRange.clamped($0) } ?? Self.defaultRows
         showsDockIcon = defaults.object(forKey: "showsDockIcon") as? Bool ?? true
         pinchGesture = defaults.object(forKey: "pinchGesture") as? Bool ?? true
         hotCorner = defaults.string(forKey: "hotCorner").flatMap(ScreenCorner.init(rawValue:)) ?? .off
-        hotKey = defaults.data(forKey: "globalToggleHotKey").flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) } ?? .default
+        hotKey =
+            defaults.data(forKey: "globalToggleHotKey").flatMap { try? JSONDecoder().decode(HotKey.self, from: $0) }
+            ?? .default
     }
 }
 

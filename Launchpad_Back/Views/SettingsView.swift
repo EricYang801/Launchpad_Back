@@ -16,8 +16,11 @@ struct SettingsView: View {
         Form {
             Section {
                 LabeledContent("Show Launchpad") {
-                    Button(isRecording ? String(localized: "Press a shortcut…") : preferences.hotKey.display, action: toggleRecording)
-                        .frame(minWidth: 120)
+                    Button(
+                        isRecording ? String(localized: "Press a shortcut…") : preferences.hotKey.display,
+                        action: toggleRecording
+                    )
+                    .frame(minWidth: 120)
                 }
                 if hotKeyError {
                     Text("Use ⌘, ⌥ or ⌃ with a key, or a function key on its own.")
@@ -37,7 +40,9 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Pinch with Thumb and Three Fingers", isOn: $preferences.pinchGesture)
-                    .onChange(of: preferences.pinchGesture) { TrackpadPinch.shared.isEnabled = preferences.pinchGesture }
+                    .onChange(of: preferences.pinchGesture) {
+                        TrackpadPinch.shared.isEnabled = preferences.pinchGesture
+                    }
                 Picker("Hot Corner", selection: $preferences.hotCorner) {
                     ForEach(ScreenCorner.allCases) { corner in
                         Text(corner.title).tag(corner)
@@ -47,7 +52,9 @@ struct SettingsView: View {
             } header: {
                 Text("Gestures")
             } footer: {
-                Text("Spread the fingers to close. If macOS also reacts to the pinch, turn off its gesture in System Settings › Trackpad › More Gestures.")
+                Text(
+                    "Spread the fingers to close. If macOS also reacts to the pinch, turn off its gesture in System Settings › Trackpad › More Gestures."
+                )
             }
 
             Section("General") {
@@ -120,8 +127,8 @@ struct SettingsView: View {
     }
 }
 
-private extension ScreenCorner {
-    var title: LocalizedStringKey {
+extension ScreenCorner {
+    fileprivate var title: LocalizedStringKey {
         switch self {
         case .off: "Off"
         case .topLeft: "Top Left"

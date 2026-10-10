@@ -33,6 +33,7 @@ nonisolated enum LayoutEntry: Codable, Hashable, Sendable {
 nonisolated struct Layout: Codable, Equatable, Sendable {
     private(set) var entries: [LayoutEntry] = []
 
+    // Not redundant: with `private(set)` the synthesized initializer would be private.
     init(entries: [LayoutEntry] = []) {
         self.entries = entries
     }
@@ -79,10 +80,13 @@ nonisolated struct Layout: Codable, Equatable, Sendable {
     /// Returns the folder the app ended up in.
     @discardableResult
     mutating func merge(_ id: String, into targetID: String, newFolderName: String) -> UUID? {
-        let isFolder = entries.contains { if case .folder(let folder) = $0 { folder.id.uuidString == id } else { false } }
+        let isFolder = entries.contains {
+            if case .folder(let folder) = $0 { folder.id.uuidString == id } else { false }
+        }
         guard id != targetID, !isFolder, !folderContains(targetID, id) else { return nil }
         guard entries.contains(where: { $0.id == targetID }), take(id) != nil,
-              let index = entries.firstIndex(where: { $0.id == targetID }) else { return nil }
+            let index = entries.firstIndex(where: { $0.id == targetID })
+        else { return nil }
 
         switch entries[index] {
         case .app(let targetApp):
@@ -113,13 +117,18 @@ nonisolated struct Layout: Codable, Equatable, Sendable {
 
     private func folderContains(_ folderID: String, _ appID: String) -> Bool {
         entries.contains {
-            if case .folder(let folder) = $0 { folder.id.uuidString == folderID && folder.apps.contains(appID) } else { false }
+            if case .folder(let folder) = $0 {
+                folder.id.uuidString == folderID && folder.apps.contains(appID)
+            } else {
+                false
+            }
         }
     }
 
     private mutating func updateFolder(_ folderID: UUID, _ change: (inout SavedFolder) -> Void) {
         guard let index = entries.firstIndex(where: { $0.id == folderID.uuidString }),
-              case .folder(var folder) = entries[index] else { return }
+            case .folder(var folder) = entries[index]
+        else { return }
         change(&folder)
         entries[index] = .folder(folder)
     }
@@ -160,7 +169,8 @@ extension Layout {
 
     nonisolated static func load(from defaults: UserDefaults) -> Layout {
         if let data = defaults.data(forKey: storageKey),
-           let layout = try? JSONDecoder().decode(Layout.self, from: data) {
+            let layout = try? JSONDecoder().decode(Layout.self, from: data)
+        {
             return layout
         }
         return migrateLegacy(from: defaults)
@@ -176,8 +186,9 @@ extension Layout {
         var folders: [String: SavedFolder] = [:]
         for case let data as [String: Any] in defaults.array(forKey: "launchpad_folders") ?? [] {
             guard let idString = data["id"] as? String, let id = UUID(uuidString: idString),
-                  let name = data["name"] as? String,
-                  let apps = (data["appIdentifiers"] ?? data["appBundleIds"]) as? [String], !apps.isEmpty else { continue }
+                let name = data["name"] as? String,
+                let apps = (data["appIdentifiers"] ?? data["appBundleIds"]) as? [String], !apps.isEmpty
+            else { continue }
             folders[id.uuidString] = SavedFolder(id: id, name: name, apps: apps)
         }
 

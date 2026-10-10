@@ -21,7 +21,9 @@ nonisolated struct GridMetrics: Equatable, Sendable {
         return GridMetrics(
             columns: columns,
             rows: rows,
-            frame: CGRect(x: area.minX + side, y: top, width: max(area.width - side * 2, 1), height: max(area.maxY - top - bottom, 1))
+            frame: CGRect(
+                x: area.minX + side, y: top, width: max(area.width - side * 2, 1),
+                height: max(area.maxY - top - bottom, 1))
         )
     }
 

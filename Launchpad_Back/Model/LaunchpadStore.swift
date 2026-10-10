@@ -161,7 +161,8 @@ final class LaunchpadStore {
     /// What the main grid shows: search results, or the layout with a dragged icon at its prospective spot.
     /// Memoized: during a drag it is read several times per pointer move (grid, page count, drop target).
     var gridItems: [LaunchItem] {
-        let items = items, drag = drag
+        let items = items
+        let drag = drag
         let movingInGrid = drag.map { $0.sourceFolder == nil || $0.leftFolder } ?? false
         let key = GridKey(
             version: itemsVersion,
@@ -211,7 +212,9 @@ final class LaunchpadStore {
     }
 
     func folderApps(_ folder: Folder) -> [AppItem] {
-        guard let drag, drag.sourceFolder == folder.id, !drag.leftFolder, let app = drag.item.app else { return folder.apps }
+        guard let drag, drag.sourceFolder == folder.id, !drag.leftFolder, let app = drag.item.app else {
+            return folder.apps
+        }
         var list = folder.apps.filter { $0.id != app.id }
         list.insert(app, at: min(drag.index, list.count))
         return list
@@ -344,7 +347,9 @@ final class LaunchpadStore {
         if isSearching {
             let count = searchResults.count
             switch key {
-            case .enter: launchSelection(); return true
+            case .enter:
+                launchSelection()
+                return true
             case .left: selection -= 1
             case .right: selection += 1
             case .up: selection -= metrics.columns
@@ -367,7 +372,8 @@ final class LaunchpadStore {
     func dragChanged(_ item: LaunchItem, from folderID: UUID?, to location: CGPoint) {
         guard !isSearching, !handedOffToDock else { return }
         if drag == nil {
-            let index = folderID == nil
+            let index =
+                folderID == nil
                 ? items.firstIndex { $0.id == item.id }
                 : openFolder?.apps.firstIndex { $0.id == item.id }
             withAnimation { isEditing = true }
@@ -403,7 +409,10 @@ final class LaunchpadStore {
                 var folderID: UUID?
                 commit { folderID = $0.merge(app.id, into: target, newFolderName: name) }
                 // Like Launchpad, a newly made folder opens so it can be renamed.
-                if targetApp != nil, let folderID { openFolderID = folderID; folderPage = 0 }
+                if targetApp != nil, let folderID {
+                    openFolderID = folderID
+                    folderPage = 0
+                }
             } else if let folderID = drag.sourceFolder, !drag.leftFolder {
                 commit { $0.moveInFolder(folderID, app: drag.item.id, to: drag.index, installed: installed) }
             } else {
@@ -455,7 +464,9 @@ final class LaunchpadStore {
         }
         let list = gridItems
         let index = page * grid.perPage + slot
-        if drag.item.app != nil, index < list.count, list[index].id != drag.item.id, grid.isOverIcon(location, slot: slot) {
+        if drag.item.app != nil, index < list.count, list[index].id != drag.item.id,
+            grid.isOverIcon(location, slot: slot)
+        {
             reorderTask?.cancel()
             pendingIndex = nil
             setMergeTarget(list[index].id)

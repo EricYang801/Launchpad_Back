@@ -34,7 +34,9 @@ final class TrackpadPinch {
         }
         guard let list = api.createList()?.takeRetainedValue() else { return }
         deviceList = list
-        devices = (0..<CFArrayGetCount(list)).compactMap { UnsafeMutableRawPointer(mutating: CFArrayGetValueAtIndex(list, $0)) }
+        devices = (0..<CFArrayGetCount(list)).compactMap {
+            UnsafeMutableRawPointer(mutating: CFArrayGetValueAtIndex(list, $0))
+        }
         for device in devices {
             api.register(device, contactCallback)
             _ = api.start(device, 0)
@@ -65,7 +67,8 @@ final class TrackpadPinch {
 
 // MARK: - MultitouchSupport
 
-private typealias ContactCallback = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, Int32, Double, Int32) -> Int32
+private typealias ContactCallback =
+    @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, Int32, Double, Int32) -> Int32
 
 /// Called on the framework's own thread with every frame of touches.
 private let contactCallback: ContactCallback = { _, touches, count, _, _ in
@@ -92,12 +95,13 @@ private nonisolated struct MultitouchAPI: @unchecked Sendable {
             dlsym(handle, name).map { unsafeBitCast($0, to: T.self) }
         }
         guard let createList = symbol("MTDeviceCreateList", as: CreateList.self),
-              let register = symbol("MTRegisterContactFrameCallback", as: Register.self),
-              let unregister = symbol("MTUnregisterContactFrameCallback", as: Register.self),
-              let start = symbol("MTDeviceStart", as: Start.self),
-              let stop = symbol("MTDeviceStop", as: Stop.self)
+            let register = symbol("MTRegisterContactFrameCallback", as: Register.self),
+            let unregister = symbol("MTUnregisterContactFrameCallback", as: Register.self),
+            let start = symbol("MTDeviceStart", as: Start.self),
+            let stop = symbol("MTDeviceStop", as: Stop.self)
         else { return nil }
-        return MultitouchAPI(createList: createList, register: register, unregister: unregister, start: start, stop: stop)
+        return MultitouchAPI(
+            createList: createList, register: register, unregister: unregister, start: start, stop: stop)
     }()
 }
 
@@ -120,34 +124,46 @@ private nonisolated final class PinchDetector: @unchecked Sendable {
     private var startSpread: Float?
     private var fired = false
 
+    /// Runs for every touch frame, about 100 a second whenever a finger is down (ordinary scrolling included),
+    /// so it allocates nothing and bails out as early as it can.
     func process(_ touches: UnsafeMutableRawPointer?, count: Int) {
-        var points: [(x: Float, y: Float)] = []
+        var touching = 0
+        var xs = SIMD4<Float>()
+        var ys = SIMD4<Float>()
         if let touches {
             for index in 0..<count {
                 let touch = touches + index * Self.stride
-                guard Self.touchingStates.contains(touch.load(fromByteOffset: Self.stateOffset, as: Int32.self)) else { continue }
-                points.append((touch.load(fromByteOffset: Self.positionOffset, as: Float.self),
-                               touch.load(fromByteOffset: Self.positionOffset + 4, as: Float.self)))
+                guard Self.touchingStates.contains(touch.load(fromByteOffset: Self.stateOffset, as: Int32.self)) else {
+                    continue
+                }
+                if touching < 4 {
+                    xs[touching] = touch.load(fromByteOffset: Self.positionOffset, as: Float.self)
+                    ys[touching] = touch.load(fromByteOffset: Self.positionOffset + 4, as: Float.self)
+                }
+                touching += 1
             }
         }
 
         // All fingers lifted: the next four-finger contact is a new gesture.
-        if points.count <= 1 {
+        if touching <= 1 {
             startSpread = nil
             fired = false
             return
         }
         // Exactly the thumb and three fingers. A fifth finger rules out the whole gesture until the hand lifts,
         // so a five-finger pinch never opens Launchpad.
-        if points.count > 4 { fired = true }
-        guard points.count == 4 else { return }
+        if touching > 4 { fired = true }
+        guard touching == 4, !fired else { return }
 
-        let cx = points.map(\.x).reduce(0, +) / Float(points.count)
-        let cy = points.map(\.y).reduce(0, +) / Float(points.count)
-        let spread = points.map { (($0.x - cx) * ($0.x - cx) + ($0.y - cy) * ($0.y - cy)).squareRoot() }.reduce(0, +) / Float(points.count)
+        let dx = xs - xs.sum() / 4
+        let dy = ys - ys.sum() / 4
+        let spread = (dx * dx + dy * dy).squareRoot().sum() / 4
 
-        guard let startSpread else { startSpread = spread; return }
-        guard !fired, startSpread > 0.01 else { return }
+        guard let startSpread else {
+            startSpread = spread
+            return
+        }
+        guard startSpread > 0.01 else { return }
         let ratio = spread / startSpread
         if ratio < 0.6 {
             fired = true

@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import Launchpad_Back
 
 func makeApp(_ name: String, id: String? = nil, category: String? = nil) -> AppItem {

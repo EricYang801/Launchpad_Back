@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+
 @testable import Launchpad_Back
 
 final class GridMetricsTests: XCTestCase {
@@ -59,17 +60,24 @@ final class AppScannerTests: XCTestCase {
         let contents = root.appendingPathComponent(path).appendingPathComponent("Contents")
         try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
         if let info {
-            XCTAssertTrue((info as NSDictionary).write(to: contents.appendingPathComponent("Info.plist"), atomically: true))
+            XCTAssertTrue(
+                (info as NSDictionary).write(to: contents.appendingPathComponent("Info.plist"), atomically: true))
         }
     }
 
     func testScansNestedFoldersDedupesAndSkipsBackgroundApps() throws {
-        try makeBundle("first/Alpha.app", info: ["CFBundleIdentifier": "com.x.alpha", "CFBundleName": "Alpha", "LSApplicationCategoryType": "public.app-category.music"])
+        try makeBundle(
+            "first/Alpha.app",
+            info: [
+                "CFBundleIdentifier": "com.x.alpha", "CFBundleName": "Alpha",
+                "LSApplicationCategoryType": "public.app-category.music",
+            ])
         try makeBundle("first/Suite/Beta.app", info: ["CFBundleIdentifier": "com.x.beta", "CFBundleDisplayName": " "])
         try makeBundle("first/a/b/c/TooDeep.app", info: ["CFBundleIdentifier": "com.x.deep"])
         try makeBundle("first/Agent.app", info: ["CFBundleIdentifier": "com.x.agent", "LSBackgroundOnly": true])
         try makeBundle("first/NoInfo.app", info: nil)
-        try makeBundle("second/AlphaCopy.app", info: ["CFBundleIdentifier": "com.x.alpha", "CFBundleName": "Alpha Old"])
+        try makeBundle(
+            "second/AlphaCopy.app", info: ["CFBundleIdentifier": "com.x.alpha", "CFBundleName": "Alpha Old"])
 
         let scanner = AppScanner(roots: [
             .init(url: root.appendingPathComponent("first"), depth: 3),
@@ -89,7 +97,9 @@ final class AppScannerTests: XCTestCase {
     }
 
     func testSearchKeyIncludesAliases() {
-        let app = AppItem(id: "com.apple.systempreferences", name: "系統設定", url: URL(fileURLWithPath: "/System/Applications/System Settings.app"), aliases: ["System Settings"])
+        let app = AppItem(
+            id: "com.apple.systempreferences", name: "系統設定",
+            url: URL(fileURLWithPath: "/System/Applications/System Settings.app"), aliases: ["System Settings"])
         XCTAssertTrue(app.searchKey.contains("system settings"))
         XCTAssertTrue(app.searchKey.contains("系統設定"))
     }
@@ -104,9 +114,10 @@ final class HotKeyTests: XCTestCase {
 
     func testRequiresModifierUnlessFunctionKey() throws {
         func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags) -> NSEvent {
-            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
-                             context: nil, characters: characters, charactersIgnoringModifiers: characters,
-                             isARepeat: false, keyCode: code)!
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: code)!
         }
         XCTAssertNil(HotKey(event: key(37, "l", [])))
         XCTAssertNil(HotKey(event: key(37, "L", [.shift])))

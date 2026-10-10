@@ -42,11 +42,24 @@ nonisolated struct AppScanner: Sendable {
         var apps: [AppItem] = []
         for root in roots {
             for url in bundles(in: root.url, depth: root.depth) {
-                guard let app = Self.makeApp(at: url), seen.insert(app.id).inserted else { continue }
+                guard let app = Self.cachedApp(at: url), seen.insert(app.id).inserted else { continue }
                 apps.append(app)
             }
         }
         return apps
+    }
+
+    /// Parsed bundles keyed by path. Launchpad rescans on every open; an app whose Info.plist hasn't changed
+    /// since the last scan isn't read again.
+    private static let cache = AppCache()
+
+    private static func cachedApp(at url: URL) -> AppItem? {
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        let modified = (try? FileManager.default.attributesOfItem(atPath: plist.path)[.modificationDate]) as? Date
+        if let modified, let entry = cache[url.path], entry.modified == modified { return entry.app }
+        let app = makeApp(at: url)
+        if let modified { cache[url.path] = (modified, app) }
+        return app
     }
 
     private func bundles(in directory: URL, depth: Int) -> [URL] {
@@ -57,7 +70,9 @@ nonisolated struct AppScanner: Sendable {
         for name in names.sorted() where !name.hasPrefix(".") {
             let url = directory.appendingPathComponent(name)
             var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                continue
+            }
             if name.hasSuffix(".app") {
                 result.append(url)
             } else {
@@ -75,7 +90,8 @@ nonisolated struct AppScanner: Sendable {
         let fileName = url.deletingPathExtension().lastPathComponent
         let plistNames = ["CFBundleDisplayName", "CFBundleName"].compactMap { info[$0] as? String }
         // Finder's display name is localized ("系統設定" for System Settings); some apps ship an empty one.
-        let name = ([FileManager.default.displayName(atPath: url.path)] + plistNames + [fileName])
+        let name =
+            ([FileManager.default.displayName(atPath: url.path)] + plistNames + [fileName])
             .map { ($0.hasSuffix(".app") ? String($0.dropLast(4)) : $0).trimmingCharacters(in: .whitespaces) }
             .first { !$0.isEmpty } ?? fileName
 
@@ -86,5 +102,16 @@ nonisolated struct AppScanner: Sendable {
             category: info["LSApplicationCategoryType"] as? String,
             aliases: plistNames + [fileName]
         )
+    }
+}
+
+/// Thread-safe storage for `AppScanner`'s parsed bundles; scans run off the main thread.
+private nonisolated final class AppCache: @unchecked Sendable {
+    private var entries: [String: (modified: Date, app: AppItem?)] = [:]
+    private let lock = NSLock()
+
+    subscript(path: String) -> (modified: Date, app: AppItem?)? {
+        get { lock.withLock { entries[path] } }
+        set { lock.withLock { entries[path] = newValue } }
     }
 }

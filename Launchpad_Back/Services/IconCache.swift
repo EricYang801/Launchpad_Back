@@ -11,7 +11,10 @@ final class IconCache {
     private final class Entry {
         let image: NSImage
         let pixels: Int
-        init(image: NSImage, pixels: Int) { self.image = image; self.pixels = pixels }
+        init(image: NSImage, pixels: Int) {
+            self.image = image
+            self.pixels = pixels
+        }
     }
 
     private let cache = NSCache<NSURL, Entry>()
@@ -45,10 +48,6 @@ final class IconCache {
             cache.setObject(Entry(image: image, pixels: pixels), forKey: url as NSURL, cost: pixels * pixels * 4)
         }
         return image
-    }
-
-    func removeAll() {
-        cache.removeAllObjects()
     }
 
     private nonisolated static func render(_ url: URL, pixels: Int) -> NSImage {
