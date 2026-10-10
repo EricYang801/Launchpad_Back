@@ -29,6 +29,7 @@ Apple 在 macOS 26 Tahoe 移除了 Launchpad，改用 Spotlight 裡的「App」�
 - **全域快捷鍵**：預設 `⌘L`，可在設定中重新錄製。`F1`–`F20` 可單獨使用，設成 `F4` 就跟以前的 Launchpad 鍵一樣。
 - **找得到你所有的應用程式**：`/System/Applications`（含「工具程式」）、`/Applications` 及其子資料夾（例如 Adobe 套裝）、`~/Applications`，以及 Apple 晶片（`/opt/homebrew`）與 Intel（`/usr/local`）上的 Homebrew Caskroom。每次開啟 Launchpad 都會重新掃描，新安裝或刪除的 App 會立刻反映。
 - **保留你的排列**：順序與資料夾都儲存在本機。暫時找不到的 App（例如放在未接上的外接硬碟）會保留原本的位置，回來時歸位。2.x 版的排列會自動移轉。
+- **記憶體佔用極低**：安裝約 150 個 App 時只用大約 40 MB 記憶體。圖示依實際顯示大小產生，搜尋結果每個關鍵字只計算一次，重新掃描沒有變化時也不會重繪畫面。
 - **多語系介面**：英文、繁體中文、簡體中文。
 
 ## 安裝

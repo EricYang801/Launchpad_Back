@@ -4,6 +4,8 @@ import CoreImage
 /// Launchpad's backdrop: the desktop picture, heavily blurred and dimmed.
 enum Wallpaper {
     private static var cached: (key: String, image: NSImage)?
+    /// Creating a Core Image context is costly; one is reused for every render.
+    private nonisolated static let context = CIContext(options: [.cacheIntermediates: false])
 
     /// Returns nil for wallpapers that are not still images (e.g. dynamic aerials); callers fall back to a material.
     static func blurred(for screen: NSScreen) async -> NSImage? {
@@ -29,7 +31,7 @@ enum Wallpaper {
             .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.15, kCIInputBrightnessKey: -0.12])
             .cropped(to: extent)
 
-        guard let cgImage = CIContext().createCGImage(image, from: extent) else { return nil }
+        guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
         return NSImage(cgImage: cgImage, size: extent.size)
     }
 }

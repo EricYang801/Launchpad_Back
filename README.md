@@ -29,6 +29,7 @@ Apple removed Launchpad in macOS 26 Tahoe and replaced it with the "Apps" view i
 - **Global shortcut** — default `⌘L`, re-recordable in Settings. `F1`–`F20` can be used on their own, so `F4` works like the old Launchpad key.
 - **Finds all your apps** — `/System/Applications` (incl. Utilities), `/Applications` and its subfolders (e.g. Adobe suites), `~/Applications`, and Homebrew Caskroom on Apple silicon (`/opt/homebrew`) and Intel (`/usr/local`). Rescans every time Launchpad opens, so new or removed apps show up immediately.
 - **Your layout is kept** — order and folders are saved locally. Apps that are temporarily missing (e.g. on an unplugged drive) keep their place and come back to it. Layouts from 2.x are migrated automatically.
+- **Light on memory** — about 40 MB of RAM with ~150 apps installed. Icons are rasterized at the size they are shown, search results are computed once per query, and a rescan that finds no changes skips the redraw.
 - **Localized** — English, Traditional Chinese and Simplified Chinese.
 
 ## Install

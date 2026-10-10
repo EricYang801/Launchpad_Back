@@ -5,12 +5,14 @@ import SwiftUI
 struct AppIconImage: View {
     let app: AppItem
     let size: CGFloat
+    private let pixels: Int
     @State private var image: NSImage?
 
     init(app: AppItem, size: CGFloat) {
         self.app = app
         self.size = size
-        _image = State(initialValue: IconCache.shared.cachedIcon(for: app.url))
+        pixels = IconCache.pixels(for: size)
+        _image = State(initialValue: IconCache.shared.cachedIcon(for: app.url, pixels: pixels))
     }
 
     var body: some View {
@@ -24,10 +26,16 @@ struct AppIconImage: View {
             }
         }
         .frame(width: size, height: size)
-        .task(id: app.url) {
-            if image == nil { image = await IconCache.shared.icon(for: app.url) }
+        .task(id: IconRequest(url: app.url, pixels: pixels)) {
+            if let image, IconCache.shared.cachedIcon(for: app.url, pixels: pixels) === image { return }
+            image = await IconCache.shared.icon(for: app.url, pixels: pixels)
         }
     }
+}
+
+private struct IconRequest: Equatable {
+    let url: URL
+    let pixels: Int
 }
 
 /// A folder as it appears in the grid: a translucent tile previewing the first nine apps.

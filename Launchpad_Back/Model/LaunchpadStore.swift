@@ -64,6 +64,7 @@ final class LaunchpadStore {
     @ObservationIgnored private var edgeDirection = 0
     /// A click that ends a drag must not also launch or open the icon.
     @ObservationIgnored private var lastDragEnd = Date.distantPast
+    @ObservationIgnored private var searchCache: (query: String, results: [AppItem])?
 
     static let spring = Animation.spring(response: 0.35, dampingFraction: 0.86)
 
@@ -89,7 +90,11 @@ final class LaunchpadStore {
     }
 
     func setApps(_ scanned: [AppItem]) {
-        apps = Dictionary(scanned.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let scannedApps = Dictionary(scanned.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Launchpad rescans on every open; nothing installed or removed means nothing to redraw.
+        guard scannedApps != apps else { return }
+        apps = scannedApps
+        searchCache = nil
         let before = layout
         layout.place(apps)
         if layout != before { layout.save(to: defaults) }
@@ -122,16 +127,23 @@ final class LaunchpadStore {
 
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    /// Memoized: a single redraw reads the results several times (grid, page count, empty state, keyboard).
     var searchResults: [AppItem] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let apps = apps
         guard !needle.isEmpty else { return [] }
-        return apps.values
+        if let searchCache, searchCache.query == needle { return searchCache.results }
+
+        let results = apps.values
             .filter { $0.searchKey.contains(needle) }
+            .map { (app: $0, isPrefix: $0.name.lowercased().hasPrefix(needle)) }
             .sorted { lhs, rhs in
-                let lhsPrefix = lhs.name.lowercased().hasPrefix(needle), rhsPrefix = rhs.name.lowercased().hasPrefix(needle)
-                if lhsPrefix != rhsPrefix { return lhsPrefix }
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                if lhs.isPrefix != rhs.isPrefix { return lhs.isPrefix }
+                return lhs.app.name.localizedStandardCompare(rhs.app.name) == .orderedAscending
             }
+            .map(\.app)
+        searchCache = (needle, results)
+        return results
     }
 
     /// What the main grid shows: search results, or the layout with a dragged icon at its prospective spot.
