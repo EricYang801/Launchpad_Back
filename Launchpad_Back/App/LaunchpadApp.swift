@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Unit tests use the app as their host; don't take over the screen or the shortcut.
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+
         NSApp.setActivationPolicy(preferences.showsDockIcon ? .regular : .accessory)
         launchpad.openSettings = { [weak self] in self?.showSettings() }
 

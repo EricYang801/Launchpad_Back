@@ -23,7 +23,7 @@ struct LaunchpadView: View {
 
                 ZStack {
                     SearchField(text: $store.query, focused: $searchFocused)
-                        .position(x: size.width / 2, y: metrics.frame.minY * 0.45)
+                        .position(x: size.width / 2, y: metrics.frame.minY * 0.5)
 
                     PagedIcons(
                         store: store,
@@ -57,12 +57,8 @@ struct LaunchpadView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
 
-                if let drag = store.drag {
-                    ItemIconImage(item: drag.item, size: metrics.iconSize)
-                        .scaleEffect(1.08)
-                        .shadow(color: .black.opacity(0.35), radius: 10, y: 6)
-                        .position(drag.location)
-                        .allowsHitTesting(false)
+                if let item = store.drag?.item {
+                    DragGhost(store: store, item: item, size: metrics.iconSize)
                 }
             }
             .coordinateSpace(.named(Self.coordinateSpace))
@@ -83,6 +79,21 @@ struct LaunchpadView: View {
         DragGesture(minimumDistance: 12)
             .onChanged { store.swipeChanged($0.translation.width) }
             .onEnded { store.swipeEnded($0.translation.width, velocity: $0.predictedEndTranslation.width - $0.translation.width) }
+    }
+}
+
+/// The icon under the pointer while dragging; the only view that follows every mouse move.
+struct DragGhost: View {
+    let store: LaunchpadStore
+    let item: LaunchItem
+    let size: CGFloat
+
+    var body: some View {
+        ItemIconImage(item: item, size: size)
+            .scaleEffect(1.08)
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 6)
+            .position(store.dragLocation)
+            .allowsHitTesting(false)
     }
 }
 

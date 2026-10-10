@@ -75,11 +75,11 @@ struct IconCell: View {
     /// The open folder this cell belongs to, or nil for the main grid.
     let folderID: UUID?
     var isSelected = false
+    var isDragged = false
+    var isMergeTarget = false
 
     var body: some View {
         let iconSize = metrics.iconSize
-        let isDragged = store.drag?.item.id == item.id
-        let isMergeTarget = store.drag?.mergeTarget == item.id
 
         VStack(spacing: iconSize * 0.07) {
             ItemIconImage(item: item, size: iconSize)
@@ -159,13 +159,17 @@ struct PagedIcons: View {
 
     var body: some View {
         let draggedID = store.drag?.item.id
+        let mergeTarget = store.drag?.mergeTarget
         let visible = items.enumerated().filter { index, item in
             abs(index / metrics.perPage - page) <= 1 || item.id == draggedID
         }
         ZStack {
             ForEach(visible, id: \.element.id) { index, item in
                 let center = metrics.center(of: index)
-                IconCell(store: store, item: item, metrics: metrics, folderID: folderID, isSelected: index == selection)
+                IconCell(
+                    store: store, item: item, metrics: metrics, folderID: folderID,
+                    isSelected: index == selection, isDragged: item.id == draggedID, isMergeTarget: item.id == mergeTarget
+                )
                     .position(x: center.x + CGFloat(index / metrics.perPage - page) * pageWidth + offset, y: center.y)
             }
         }

@@ -31,5 +31,5 @@ jobs:
             -destination "platform=macOS" \
             -only-testing:Launchpad_BackTests \
             CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
-            | tee xcodebuild.log | grep -E "error:|warning:|Test Case|Executed|\*\* (TEST|BUILD)" || true
+            | tee xcodebuild.log | grep -iE "error:|warning:|test case|executed|\*\* (TEST|BUILD)" || true
           grep -q "\*\* TEST SUCCEEDED \*\*" xcodebuild.log

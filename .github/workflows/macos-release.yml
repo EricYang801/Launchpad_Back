@@ -1,51 +1,47 @@
-name: Build and Release macOS App
+name: Release
 
 on:
   push:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    runs-on: macos-latest
+  release:
+    runs-on: macos-26
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
-
-      - name: Build App
+      - name: Select Xcode 26
         run: |
-          xcodebuild \
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}"
+
+      - name: Build universal app
+        run: |
+          set -o pipefail
+          xcodebuild build \
             -project Launchpad_Back.xcodeproj \
             -scheme Launchpad_Back \
             -configuration Release \
-            -destination "platform=macOS" \
+            -destination "generic/platform=macOS" \
             -derivedDataPath build \
-            MACOSX_DEPLOYMENT_TARGET=15.0 \
-            CODE_SIGNING_ALLOWED=NO build
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            | tail -n 20
 
-      - name: Find built app
-        id: find_app
+      - name: Package
         run: |
-          APP_PATH=$(find build -name "Launchpad_Back.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ Error: Launchpad_Back.app not found!"
-            exit 1
-          fi
-          echo "Found app at $APP_PATH"
-          echo "APP_PATH=$APP_PATH" >> $GITHUB_ENV
+          APP=build/Build/Products/Release/Launchpad_Back.app
+          codesign --force --deep --sign - "$APP"
+          # ditto keeps symlinks and extended attributes and puts only the .app at the zip root.
+          ditto -c -k --keepParent "$APP" Launchpad_Back.app.zip
 
-      - name: Zip App
-        run: |
-          zip -r Launchpad_Back-macOS.zip "$APP_PATH"
-
-      - name: Create GitHub Release
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          files: Launchpad_Back-macOS.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: Launchpad_Back.app.zip
+          generate_release_notes: true

@@ -21,8 +21,14 @@ final class InputMonitor {
     func start() {
         guard monitors.isEmpty else { return }
         monitors = [
-            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] in self?.key($0) ?? $0 },
-            NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] in self?.scroll($0) ?? $0 },
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self else { return event }
+                return self.key(event)
+            },
+            NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self else { return event }
+                return self.scroll(event)
+            },
             NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
                 // Drop on mouse-up even if SwiftUI dropped the drag gesture along the way.
                 if event.window === self?.window { self?.store.endDrag() }
@@ -67,6 +73,10 @@ final class InputMonitor {
            let scalar = characters.unicodeScalars.first,
            !CharacterSet.controlCharacters.contains(scalar), !(0xF700...0xF8FF).contains(scalar.value) {
             store.query += characters
+            // Focusing the field selects its text; put the caret at the end so the next key doesn't replace it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak window] in
+                (window?.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
+            }
             return nil
         }
         return event

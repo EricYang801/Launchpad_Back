@@ -6,7 +6,6 @@ struct DragState {
     var item: LaunchItem
     /// Set when the drag started inside an open folder.
     var sourceFolder: UUID?
-    var location: CGPoint
     /// The folder was left, so the drop goes to the main grid.
     var leftFolder = false
     /// Insertion index in the grid the icon is over, counted without the dragged icon.
@@ -25,6 +24,10 @@ final class LaunchpadStore {
     var query = "" {
         didSet {
             guard query != oldValue else { return }
+            if !query.isEmpty {
+                openFolderID = nil
+                isEditing = false
+            }
             page = 0
             selection = 0
             pageOffset = 0
@@ -41,6 +44,8 @@ final class LaunchpadStore {
     /// Keyboard selection among search results.
     private(set) var selection = 0
     private(set) var drag: DragState?
+    /// Kept apart from `drag` so pointer movement only redraws the floating icon, not the whole grid.
+    private(set) var dragLocation: CGPoint = .zero
     /// Drives the open/close zoom; the window controller orders the window out after it.
     var isPresented = false
     var size: CGSize = .zero
@@ -316,9 +321,9 @@ final class LaunchpadStore {
                 ? items.firstIndex { $0.id == item.id }
                 : openFolder?.apps.firstIndex { $0.id == item.id }
             withAnimation { isEditing = true }
-            drag = DragState(item: item, sourceFolder: folderID, location: location, index: index ?? 0)
+            drag = DragState(item: item, sourceFolder: folderID, index: index ?? 0)
         }
-        drag?.location = location
+        dragLocation = location
         updateDropTarget()
     }
 
@@ -364,8 +369,8 @@ final class LaunchpadStore {
         if let folder = openFolder, drag.sourceFolder == folder.id, !drag.leftFolder {
             let grid = folderMetrics(for: folder)
             let bounds = grid.frame.insetBy(dx: -grid.cellSize.width * 0.4, dy: -grid.cellSize.height * 0.6)
-            if bounds.contains(drag.location) {
-                if let slot = grid.slot(at: drag.location) {
+            if bounds.contains(dragLocation) {
+                if let slot = grid.slot(at: dragLocation) {
                     scheduleReorder(to: min(folderPage * grid.perPage + slot, folder.apps.count - 1))
                 }
                 return
@@ -381,8 +386,9 @@ final class LaunchpadStore {
 
         updateEdgeFlip()
         let grid = metrics
-        guard let location = self.drag?.location, let slot = grid.slot(at: location) else {
-            self.drag?.mergeTarget = nil
+        let location = dragLocation
+        guard let slot = grid.slot(at: location) else {
+            setMergeTarget(nil)
             return
         }
         let list = gridItems
@@ -390,11 +396,16 @@ final class LaunchpadStore {
         if drag.item.app != nil, index < list.count, list[index].id != drag.item.id, grid.isOverIcon(location, slot: slot) {
             reorderTask?.cancel()
             pendingIndex = nil
-            self.drag?.mergeTarget = list[index].id
+            setMergeTarget(list[index].id)
             return
         }
-        self.drag?.mergeTarget = nil
+        setMergeTarget(nil)
         scheduleReorder(to: min(index, max(list.count - 1, 0)))
+    }
+
+    /// Writes only real changes: every write to `drag` redraws the grid.
+    private func setMergeTarget(_ id: String?) {
+        if drag?.mergeTarget != id { drag?.mergeTarget = id }
     }
 
     /// Icons make room only after the pointer rests briefly, so passing over an icon to reach another doesn't shuffle the grid.
@@ -417,7 +428,8 @@ final class LaunchpadStore {
 
     /// Holding a dragged icon at the left or right edge turns the page, repeatedly.
     private func updateEdgeFlip() {
-        guard let location = drag?.location else { return }
+        guard drag != nil else { return }
+        let location = dragLocation
         let edge: CGFloat = 40
         let direction = location.x < edge ? -1 : (location.x > size.width - edge ? 1 : 0)
         guard direction != edgeDirection else { return }

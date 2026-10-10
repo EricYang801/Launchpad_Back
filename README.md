@@ -1,192 +1,150 @@
-# Launchpad_Back
+# Launchpad_Back — the classic Launchpad for macOS Tahoe (26)
 
-> A native Launchpad replacement for macOS 15.6+, built with SwiftUI + AppKit.
-
-<div align="center">
-  <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="Downloads" />
-</div>
+> Bring back Launchpad on macOS 26 Tahoe: the full-screen app grid with pages, folders and drag-to-arrange, free and open source.
 
 **[English](./README.md) | [繁體中文](./README_zh-TW.md) | [简体中文](./README_zh-CN.md)**
 
-Looking for a Launchpad alternative on macOS Tahoe? This project focuses on exactly that: a launcher with global hotkey toggle, paged app grid, folder management, drag sorting, and fast local search.
+<div align="center">
+  <a href="https://github.com/EricYang801/Launchpad_Back/releases/latest">
+    <img src="https://img.shields.io/github/downloads/EricYang801/Launchpad_Back/total?style=for-the-badge&color=blue" alt="Downloads" />
+  </a>
+  <br /><br />
+  <strong><a href="https://github.com/EricYang801/Launchpad_Back/releases/latest">⬇ Download the latest release</a></strong>
+  <br /><br />
+  <img src="./Example.png" alt="Launchpad_Back on macOS Tahoe: full-screen Launchpad app grid with folders and page dots over a blurred desktop wallpaper" />
+</div>
 
-## Demo
+## Why
 
-![Main Interface](./Example.png)
+Apple removed Launchpad in macOS 26 Tahoe and replaced it with the "Apps" view in Spotlight. If you miss the familiar full-screen grid of app icons — swiping between pages, grouping apps into folders, arranging everything by hand — Launchpad_Back brings it back. It is a native SwiftUI + AppKit app, free and open source under GPL-3.0.
 
-Rebind the global shortcut in Settings (`Cmd + ,`):
+## Features
 
-<img src="./Settings.png" alt="Settings window" width="450" />
+- **Full-screen, like the original** — covers the whole screen on the display with the mouse pointer, over your blurred and dimmed desktop wallpaper (falls back to a system blur material), with a zoom-and-fade open/close animation.
+- **Paged icon grid** — 7 columns × 5 rows by default, just like the original Launchpad. Adjust columns (4–12) and rows (3–9) in Settings. Clickable page dots at the bottom.
+- **Natural paging** — two-finger trackpad swipes follow your fingers and snap into place; the mouse wheel turns one page per notch; click-and-drag on empty space to swipe; arrow keys work too.
+- **Folders in the Big Sur style** — translucent tiles preview 9 apps. Drop an app onto another to create a folder; it is auto-named after the App Store category (e.g. "Developer Tools", "Games") and opens so you can rename it. Click the folder title to rename, drag apps out to remove them. A folder left with one app turns back into that app. Folders with more than 15 apps get pages.
+- **Edit mode** — long-press an icon or simply start dragging. Icons jiggle and move aside live while you drag; hold a dragged icon at the screen edge to move it to another page. Click empty space or press `Esc` to finish.
+- **Type to search** — just start typing. Matches localized app names, English names, bundle IDs and paths, with name-prefix matches first. Arrow keys move the selection, `Return` opens it.
+- **Global shortcut** — default `⌘L`, re-recordable in Settings. `F1`–`F20` can be used on their own, so `F4` works like the old Launchpad key.
+- **Finds all your apps** — `/System/Applications` (incl. Utilities), `/Applications` and its subfolders (e.g. Adobe suites), `~/Applications`, and Homebrew Caskroom on Apple silicon (`/opt/homebrew`) and Intel (`/usr/local`). Rescans every time Launchpad opens, so new or removed apps show up immediately.
+- **Your layout is kept** — order and folders are saved locally. Apps that are temporarily missing (e.g. on an unplugged drive) keep their place and come back to it. Layouts from 2.x are migrated automatically.
+- **Localized** — English, Traditional Chinese and Simplified Chinese.
 
 ## Install
 
-Download `Launchpad_Back.app.zip` from the [latest release](https://github.com/EricYang801/Launchpad_Back/releases/latest), unzip it, and move `Launchpad_Back.app` into `/Applications`.
+1. Download `Launchpad_Back.app.zip` from the **[latest release](https://github.com/EricYang801/Launchpad_Back/releases/latest)**.
+2. Unzip it.
+3. Move `Launchpad_Back.app` into `/Applications`.
+4. Open it, then press `⌘L` (or click its Dock icon) to show Launchpad.
 
-The app is ad-hoc signed rather than notarized, so macOS blocks it on first launch. Right-click the app and choose **Open**, then confirm — or allow it under **System Settings → Privacy & Security**.
+### Requirements
 
-## Search Keywords
+- macOS 15.6 or later (works on macOS 26 Tahoe)
+- Apple silicon or Intel Mac
 
-Launchpad alternative, macOS app launcher, SwiftUI launcher, AppKit launcher, global hotkey launcher, macOS Tahoe Launchpad replacement, Homebrew Cask app scanner
+### First launch
 
-## What It Does (Aligned With Current Code)
+The app is ad-hoc signed, not notarized, so macOS blocks it the first time. Either:
 
-- Runs in a floating launcher window and can be toggled globally with a customizable hotkey (default `Cmd + L`, configurable in Settings)
-- Opens and closes with a Launchpad-style zoom + fade animation; launching an app or clicking outside the window dismisses it
-- Uses a responsive grid with dynamic rows/columns (5-9 columns, 3-7 rows)
-- Supports drag reorder, folders, folder rename, and drag-out from expanded folders
-- Starts searching as soon as you type, with `Return` launching the first match
-- Searches by app name, bundle ID, and app path (case-insensitive)
-- Scans system, user, and Homebrew app locations
-- Resolves app icons through workspace icon, metadata fallback, and generated fallback icon
+- Right-click (or Control-click) `Launchpad_Back.app` → **Open**, then confirm; or
+- Try to open it once, then go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
-## Controls
+You only need to do this once.
 
-| Input | Behavior |
+## Usage
+
+| Action | How |
 | --- | --- |
-| Global hotkey (default `Cmd + L`, configurable in Settings / `Cmd + ,`) | Toggle launcher visibility globally |
-| Type anywhere | Characters go straight into the search field |
-| `Return` | Launch the first search result |
-| `Cmd + W` | Hide launcher window |
-| `Cmd + Q` | Quit app |
-| `Cmd + ,` | Open Settings |
-| `Esc` | Exit edit mode -> close folder -> clear search -> hide window |
-| `Left` / `Up` | Previous page (when search is empty) |
-| `Right` / `Down` | Next page (when search is empty) |
-| Click outside the window | Hide launcher |
-| Trackpad scroll gesture | Pages follow your fingers; release to snap or flick to turn |
-| Mouse wheel | Page switch with notch accumulation + debounce |
+| Show / hide Launchpad | Global shortcut (default `⌘L`), click the Dock icon, or open the app again |
+| Open an app | Click its icon |
+| Turn pages | Two-finger swipe, mouse wheel, click-and-drag on empty space, `←` / `→`, or click a page dot |
+| Search | Start typing; `↑` `↓` `←` `→` move the selection, `Return` opens it |
+| Enter edit mode | Long-press an icon, or just start dragging one |
+| Move an app to another page | Drag it and hold it at the left or right screen edge |
+| Create a folder | Drop an app onto another app |
+| Rename a folder | Click the folder title |
+| Remove an app from a folder | Drag it out of the open folder |
+| Go back one step | `Esc`: cancel drag → close folder → leave edit mode → clear search → close Launchpad |
+| Close Launchpad | Launch an app, click empty space, switch to another app, or `⌘W` |
+| Open Settings | `⌘,` |
+| Quit | `⌘Q` |
 
 ## Settings
 
-Press `Cmd + ,` to open Settings, where the global toggle shortcut can be re-recorded: click the shortcut button and press a new combination.
+Press `⌘,` while Launchpad is open.
 
-- Regular keys require `Cmd`, `Opt`, or `Ctrl`
-- `F1`–`F20` can be bound on their own, so `F4` reproduces the original Launchpad key
-- `Esc` cancels recording
-- The hotkey is re-registered immediately and survives relaunch
+<img src="./Settings.png" alt="Launchpad_Back Settings window: global keyboard shortcut, Open at Login, Show in Dock, grid columns and rows, Reset Layout" width="450" />
 
-## App Discovery Paths
+- **Shortcut** — click the button and press a new combination. Regular keys need `⌘`, `⌥` or `⌃`; `F1`–`F20` can be used alone.
+- **Open at Login** — start Launchpad_Back automatically when you log in.
+- **Show in Dock** — turn off to hide the Dock icon.
+- **Grid** — columns (4–12) and rows (3–9).
+- **Reset Layout** — clear your custom order and folders.
 
-| Path | Recursive |
-| --- | --- |
-| `/System/Applications` | No |
-| `/System/Applications/Utilities` | No |
-| `/Applications` | No |
-| `/Applications/Utilities` | No |
-| `~/Applications` | No |
-| `/opt/homebrew/Caskroom` | Yes |
+## FAQ
 
-The scanner also filters a set of hidden/background system apps and deduplicates apps using a stable identifier (`bundleID`, or path when `bundleID` is missing).
+### Where did Launchpad go in macOS Tahoe?
 
-## Folder and Layout Behavior
+Apple removed Launchpad in macOS 26 Tahoe. Its replacement is the "Apps" view inside Spotlight, which lists apps but has no free-form pages or folders you arrange yourself.
 
-- Long press any icon to enter edit mode
-- Drag app onto app to create a folder (`New Folder` by default)
-- Drag app onto folder to add it
-- Reorder apps inside an expanded folder
-- Drag app out of expanded folder to remove it
-- Folder is removed automatically if only one app remains
-- Reset layout clears saved custom order and folders, then restores alphabetical order
+### How do I get Launchpad back on macOS 26?
 
-## Icon Pipeline
+Install Launchpad_Back from the [latest release](https://github.com/EricYang801/Launchpad_Back/releases/latest), allow it on first launch (see [First launch](#first-launch)), and press `⌘L`. Turn on **Open at Login** in Settings so it is always available.
 
-- Resolve symlink/canonical bundle path first
-- Use `NSWorkspace` icon if it is not the generic app icon
-- If generic icon is returned, load icon from bundle metadata (`CFBundleIconFile`, `CFBundleIconName`, etc.)
-- If metadata icon is still unavailable, generate a consistent initials-based fallback icon
-- Cache resized icons asynchronously and preload adjacent pages for smoother pagination
+### Can I use F4 like the old Launchpad key?
 
-## Persistence
+Yes. Open Settings (`⌘,`), click the shortcut button and press `F4`. Function keys `F1`–`F20` can be used without modifiers. On many Mac keyboards you may need to hold `fn`, or enable "Use F1, F2, etc. keys as standard function keys" in System Settings → Keyboard.
 
-Launchpad_Back stores layout state in `UserDefaults`:
+### Does it keep my folders?
 
-- `launchpad_item_order`
-- `launchpad_folders`
-- `globalToggleHotKey`
+Your order and folders are saved locally and survive restarts and updates. Layouts created with Launchpad_Back 2.x are migrated automatically. It does not import the layout from Apple's old Launchpad.
 
-## Project Structure
+### Does it need any permissions?
 
-```text
-Launchpad_Back/
-├── Launchpad_BackApp.swift
-├── ContentView.swift
-├── Models/
-│   └── AppItem.swift
-├── Services/
-│   ├── AppIconCache.swift
-│   ├── AppIconResolver.swift
-│   ├── AppLauncherService.swift
-│   ├── AppScannerService.swift
-│   ├── GestureManager.swift
-│   ├── GridLayoutManager.swift
-│   ├── GridScreenLayout.swift
-│   ├── HotKeySettings.swift
-│   ├── KeyboardEventManager.swift
-│   └── Logger.swift
-├── ViewModels/
-│   ├── EditModeManager.swift
-│   ├── LaunchpadViewModel.swift
-│   ├── PaginationViewModel.swift
-│   └── SearchViewModel.swift
-├── Views/
-│   ├── AppIconView.swift
-│   ├── BackgroundView.swift
-│   ├── FolderExpandedView.swift
-│   ├── PageIndicatorView.swift
-│   ├── SearchBarView.swift
-│   └── SettingsView.swift
-└── Assets.xcassets/
+No. The global shortcut uses Carbon hot keys, so no Accessibility permission is needed. Everything stays on your Mac.
+
+### Is this an Apple app?
+
+No. Launchpad_Back is an independent open-source project and is not affiliated with or endorsed by Apple. "Launchpad" and "macOS" are trademarks of Apple Inc.
+
+## Build from source
+
+Requires Xcode 26.
+
+```bash
+git clone https://github.com/EricYang801/Launchpad_Back.git
+cd Launchpad_Back
+open Launchpad_Back.xcodeproj   # then press ⌘R
 ```
 
-## Requirements
-
-- macOS 15.6 or later
-- Xcode 26.0 or later
-
-## Build
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/EricYang801/Launchpad_Back.git
-   cd Launchpad_Back
-   ```
-
-2. Open in Xcode:
-
-   ```bash
-   open Launchpad_Back.xcodeproj
-   ```
-
-3. Build and run:
-
-- Select `My Mac`
-- Press `Cmd + R`
-
-Or build from Terminal:
+Or from Terminal:
 
 ```bash
 xcodebuild build -scheme Launchpad_Back -destination 'platform=macOS'
 ```
 
-## Tests
-
-Run unit tests:
+Run the unit tests:
 
 ```bash
 xcodebuild test -scheme Launchpad_Back -destination 'platform=macOS' -only-testing:Launchpad_BackTests
 ```
 
-Current test suite covers:
+## Contributing
 
-- icon resolution for direct path, symlink path, metadata fallback, and generated fallback icons
-- icon cache behavior for canonical paths, concurrent requests, and in-flight async request joining
-- folder creation/add/remove/delete and saved-order restore
-- reset layout behavior
-- search matching by app name, bundle ID, and path
-- pagination slicing, bounds checks, and page validation
-- basic `SearchViewModel` behavior
+Bug reports, ideas and pull requests are welcome — please [open an issue](https://github.com/EricYang801/Launchpad_Back/issues) first for larger changes.
+
+```text
+Launchpad_Back/
+├── App/        app delegate, window controller, input handling, global hot key
+├── Model/      store, layout, grid metrics, preferences
+├── Services/   app scanner, icon cache, wallpaper
+├── Views/      SwiftUI views
+└── Localizable.xcstrings   English, Traditional Chinese, Simplified Chinese strings
+```
 
 ## License
 
-This project is licensed under GPL-3.0. See [LICENSE](./LICENSE).
+[GPL-3.0](./LICENSE) © [EricYang801](https://github.com/EricYang801)
+
+Launchpad_Back is not affiliated with Apple Inc.

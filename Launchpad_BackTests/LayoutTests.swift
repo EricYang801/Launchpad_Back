@@ -69,14 +69,14 @@ final class LayoutTests: XCTestCase {
 
     func testMovingAppOutOfTwoAppFolderDissolvesIt() throws {
         var layout = placed()
-        try XCTUnwrap(layout.merge(beta.id, into: alpha.id, newFolderName: "F"))
+        _ = try XCTUnwrap(layout.merge(beta.id, into: alpha.id, newFolderName: "F"))
         layout.move(beta.id, to: 0, installed: installed)
         XCTAssertEqual(layout.items(for: all).names, ["Beta", "Alpha", "Delta", "Gamma"])
     }
 
     func testFolderKeepsAppsThatAreNotInstalled() throws {
         var layout = placed()
-        try XCTUnwrap(layout.merge(beta.id, into: alpha.id, newFolderName: "F"))
+        _ = try XCTUnwrap(layout.merge(beta.id, into: alpha.id, newFolderName: "F"))
         var withoutBeta = all
         withoutBeta[beta.id] = nil
         layout.place(withoutBeta)
@@ -101,7 +101,7 @@ final class LayoutTests: XCTestCase {
     func testSaveAndLoadRoundTrip() throws {
         let defaults = makeDefaults()
         var layout = placed()
-        try XCTUnwrap(layout.merge(beta.id, into: alpha.id, newFolderName: "F"))
+        _ = try XCTUnwrap(layout.merge(beta.id, into: alpha.id, newFolderName: "F"))
         layout.save(to: defaults)
         XCTAssertEqual(Layout.load(from: defaults), layout)
     }
