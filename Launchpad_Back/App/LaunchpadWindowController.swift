@@ -20,7 +20,8 @@ final class LaunchpadWindowController {
     init(store: LaunchpadStore) {
         self.store = store
         window = LaunchpadWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+        // Above the Dock but below the menu bar, so the app menu (Settings…) stays clickable.
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1)
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
         window.isOpaque = false
         window.backgroundColor = .clear
